@@ -1,0 +1,183 @@
+name: Code Coverage
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  coverage:
+    name: Coverage Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for proper diff coverage
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[test]
+        pip install requests coverage-badge diff-cover
+
+    - name: Run tests with coverage
+      run: |
+        pytest --cov=src/paymcp --cov-report=xml --cov-report=term --cov-report=html
+
+    - name: Generate coverage badge
+      run: |
+        coverage-badge -o coverage.svg -f
+
+    - name: Check diff coverage for new code
+      id: diff_coverage
+      run: |
+        # Get the base branch
+        BASE_BRANCH=${{ github.base_ref }}
+
+        # Fetch the base branch
+        git fetch origin $BASE_BRANCH
+
+        # Run diff-cover to check coverage on changed lines
+        diff-cover coverage.xml --compare-branch=origin/$BASE_BRANCH --fail-under=90 --diff-filter=ACMRTU > diff_coverage.txt 2>&1 || true
+
+        # Extract coverage percentage
+        DIFF_COVERAGE=$(grep -oP 'Total:.*?\K\d+(?=%)' diff_coverage.txt || echo "0")
+
+        # Output results
+        echo "diff_coverage=$DIFF_COVERAGE" >> $GITHUB_OUTPUT
+        echo "Coverage for new code: $DIFF_COVERAGE%"
+
+        # Save report for comment
+        cat diff_coverage.txt
+
+        # Fail if coverage is below 90%
+        if [ "$DIFF_COVERAGE" -lt "90" ]; then
+          echo "❌ Coverage for new code is below 90% threshold ($DIFF_COVERAGE%)"
+          echo "coverage_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "✅ Coverage for new code meets 90% threshold ($DIFF_COVERAGE%)"
+          echo "coverage_status=passed" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Get overall coverage
+      id: overall_coverage
+      run: |
+        # Extract overall coverage from pytest output
+        OVERALL=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(round(float(root.get('line-rate', 0)) * 100, 2))")
+        echo "overall_coverage=$OVERALL" >> $GITHUB_OUTPUT
+        echo "Overall coverage: $OVERALL%"
+
+    - name: Comment PR with coverage report
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const fs = require('fs');
+
+          // Read diff coverage report
+          let diffReport = '';
+          try {
+            diffReport = fs.readFileSync('diff_coverage.txt', 'utf8');
+          } catch (error) {
+            diffReport = 'Unable to generate diff coverage report';
+          }
+
+          const diffCoverage = '${{ steps.diff_coverage.outputs.diff_coverage }}' || 'N/A';
+          const overallCoverage = '${{ steps.overall_coverage.outputs.overall_coverage }}' || 'N/A';
+          const coverageStatus = '${{ steps.diff_coverage.outputs.coverage_status }}';
+
+          const statusEmoji = coverageStatus === 'passed' ? '✅' : '❌';
+          const statusText = coverageStatus === 'passed' ? 'PASSED' : 'FAILED';
+
+          const comment = `## ${statusEmoji} Coverage Report
+
+          ### Summary
+          - **Overall Coverage:** ${overallCoverage}%
+          - **New Code Coverage:** ${diffCoverage}% (Minimum required: 90%)
+          - **Status:** ${statusText}
+
+          ### Coverage for Changed Files
+          \`\`\`
+          ${diffReport.substring(0, 3000)}
+          \`\`\`
+
+          ${coverageStatus === 'failed' ? '### ⚠️ Action Required\nPlease add tests to ensure new code has at least 90% coverage.' : '### ✨ Great job!\nYour new code meets the coverage requirements.'}
+
+          ---
+          *Coverage report generated for commit ${context.sha.substring(0, 7)}*`;
+
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComment = comments.find(comment =>
+            comment.user.type === 'Bot' &&
+            comment.body.includes('Coverage Report')
+          );
+
+          if (botComment) {
+            // Update existing comment
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: comment
+            });
+          } else {
+            // Create new comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+          }
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-reports
+        path: |
+          coverage.xml
+          htmlcov/
+          coverage.svg
+          diff_coverage.txt
+
+    - name: Add coverage check status
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const diffCoverage = '${{ steps.diff_coverage.outputs.diff_coverage }}' || '0';
+          const overallCoverage = '${{ steps.overall_coverage.outputs.overall_coverage }}' || '0';
+          const status = '${{ steps.diff_coverage.outputs.coverage_status }}' === 'passed' ? 'success' : 'failure';
+
+          await github.rest.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: 'Code Coverage Quality Gate',
+            head_sha: context.sha,
+            status: 'completed',
+            conclusion: status,
+            output: {
+              title: `Coverage: Overall ${overallCoverage}% | New Code ${diffCoverage}%`,
+              summary: status === 'success'
+                ? `✅ New code coverage (${diffCoverage}%) meets the 90% threshold`
+                : `❌ New code coverage (${diffCoverage}%) is below the 90% threshold`,
+            }
+          });
