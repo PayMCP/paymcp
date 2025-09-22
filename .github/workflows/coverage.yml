@@ -48,7 +48,7 @@ jobs:
         git fetch origin $BASE_BRANCH
 
         # Run diff-cover to check coverage on changed lines
-        diff-cover coverage.xml --compare-branch=origin/$BASE_BRANCH --fail-under=90 --diff-filter=ACMRTU > diff_coverage.txt 2>&1 || true
+        diff-cover coverage.xml --compare-branch=origin/$BASE_BRANCH --fail-under=90 > diff_coverage.txt 2>&1 || true
 
         # Extract coverage percentage
         DIFF_COVERAGE=$(grep -oP 'Total:.*?\K\d+(?=%)' diff_coverage.txt || echo "0")
