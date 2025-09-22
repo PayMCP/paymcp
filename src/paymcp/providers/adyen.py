@@ -21,6 +21,9 @@ class AdyenProvider(BasePaymentProvider):
             self.base_url = "https://checkout-live.adyen.com/v71"
         self.logger.debug("Adyen ready")
 
+    def get_name(self) -> str:
+        return "adyen"
+
     def _build_headers(self) -> dict:
         return {
             "X-API-Key": self.api_key,

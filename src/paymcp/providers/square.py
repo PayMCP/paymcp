@@ -26,6 +26,9 @@ class SquareProvider(BasePaymentProvider):
         super().__init__(logger=logger)
         self.logger.debug(f"Square ready (API version: {self.api_version})")
 
+    def get_name(self) -> str:
+        return "square"
+
     def _build_headers(self) -> dict:
         """Square uses Bearer token authentication."""
         return {

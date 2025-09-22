@@ -20,6 +20,9 @@ class PayPalProvider(BasePaymentProvider):
         super().__init__(logger=logger)
         self.logger.debug("PayPal ready")
 
+    def get_name(self) -> str:
+        return "paypal"
+
     def _get_token(self):
         """Get OAuth token from PayPal."""
         resp = requests.post(

@@ -24,6 +24,9 @@ class CoinbaseProvider(BasePaymentProvider):
         self.confirm_on_pending = confirm_on_pending
         self.logger.debug("Coinbase Commerce ready")
 
+    def get_name(self) -> str:
+        return "coinbase"
+
     def _build_headers(self) -> dict:
         headers = {
             "X-CC-Api-Key": self.api_key,

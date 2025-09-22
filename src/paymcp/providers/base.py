@@ -42,6 +42,10 @@ class BasePaymentProvider(ABC):
             raise RuntimeError(f"Value error: {e}") from e
 
     @abstractmethod
+    def get_name(self) -> str:
+        """Get provider name for session management."""
+
+    @abstractmethod
     def create_payment(
         self, amount: float, currency: str, description: str
     ) -> Tuple[str, str]:

@@ -15,6 +15,9 @@ class WalleotProvider(BasePaymentProvider):
         super().__init__(api_key, apiKey, logger=logger)
         self.logger.debug(f"Walleot ready")
 
+    def get_name(self) -> str:
+        return "walleot"
+
     def _build_headers(self) -> dict:
         return {
             "Authorization": f"Bearer {self.api_key}",

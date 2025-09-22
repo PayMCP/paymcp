@@ -17,6 +17,9 @@ class StripeProvider(BasePaymentProvider):
         self.cancel_url = cancel_url
         self.logger.debug("Stripe ready")
 
+    def get_name(self) -> str:
+        return "stripe"
+
     def create_payment(self, amount: float, currency: str, description: str):
         """Creates a Stripe Checkout session and returns (session_id, session_url)."""
         self.logger.debug(f"Creating Stripe payment: {amount} {currency} for '{description}'")

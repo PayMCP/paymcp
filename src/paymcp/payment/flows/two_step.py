@@ -3,10 +3,13 @@ import functools
 from typing import Dict, Any
 from ...utils.messages import open_link_message, opened_webview_message
 from ..webview import open_payment_webview_if_available
+from ...session import SessionManager, SessionKey, SessionData
 import logging
+import time
 logger = logging.getLogger(__name__)
 
-PENDING_ARGS: Dict[str, Dict[str, Any]] = {} #TODO redis?
+# Session storage for payment args
+session_storage = SessionManager.get_storage()
 
 
 def make_paid_wrapper(func, mcp, provider, price_info):
@@ -28,23 +31,28 @@ def make_paid_wrapper(func, mcp, provider, price_info):
     )
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
-        original_args = PENDING_ARGS.get(str(payment_id), None)
-        logger.debug(f"[confirm_tool] PENDING_ARGS keys: {list(PENDING_ARGS.keys())}")
-        logger.debug(f"[confirm_tool] Retrieved args: {original_args}")
-        if original_args is None:
+        provider_name = provider.get_name()
+        session_key = SessionKey(provider=provider_name, payment_id=str(payment_id))
+
+        stored = await session_storage.get(session_key)
+        logger.debug(f"[confirm_tool] Looking up session with provider={provider_name} payment_id={payment_id}")
+
+        if stored is None:
             raise RuntimeError("Unknown or expired payment_id")
-        
+
         status = provider.get_payment_status(payment_id)
         if status != "paid":
             raise RuntimeError(
                 f"Payment status is {status}, expected 'paid'"
             )
-        logger.debug(f"[confirm_tool] Calling {func.__name__} with args: {original_args}")
+        logger.debug(f"[confirm_tool] Calling {func.__name__} with args: {stored.args}")
 
-        del PENDING_ARGS[str(payment_id)]
+        await session_storage.delete(session_key)
 
         # Call the original tool with its initial arguments
-        return await func(**original_args)
+        stored_args = stored.args.get('args', ())
+        stored_kwargs = stored.args.get('kwargs', {})
+        return await func(*stored_args, **stored_kwargs)
 
     # --- Step 1: payment initiation -------------------------------------------
     @functools.wraps(func)
@@ -65,10 +73,21 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             )
 
         pid_str = str(payment_id)
-        PENDING_ARGS[pid_str] = kwargs
+        provider_name = provider.get_name()
+        session_key = SessionKey(provider=provider_name, payment_id=pid_str)
+
+        # Stash original args with session storage (15 minutes TTL)
+        session_data = SessionData(
+            args={'args': args, 'kwargs': kwargs},
+            ts=int(time.time() * 1000),
+            provider_name=provider_name,
+            metadata={"tool_name": func.__name__}
+        )
+        await session_storage.set(session_key, session_data, 900)  # 15 minutes TTL
 
         # Return data for the user / LLM
         return {
+            "status": "pending",
             "message": message,
             "payment_url": payment_url,
             "payment_id": pid_str,
