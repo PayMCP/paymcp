@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.12']
+        python-version: ['3.12', '3.13']
 
     steps:
     - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
       run: pytest
 
     - name: Generate coverage report
-      if: matrix.python-version == '3.12'
+      if: matrix.python-version == '3.13'
       run: |
         pytest --cov=src --cov-report=xml --cov-report=term --cov-report=html
         echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
@@ -41,7 +41,7 @@ jobs:
         python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); coverage = round(float(root.get('line-rate', 0)) * 100, 2); print(f'Overall Coverage: {coverage}%')" >> $GITHUB_STEP_SUMMARY
 
     - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.12'
+      if: matrix.python-version == '3.13'
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
@@ -59,7 +59,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
+        python-version: '3.13'
 
     - name: Install dependencies
       run: |
