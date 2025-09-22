@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.12', '3.13', '3.x']
 
     steps:
     - uses: actions/checkout@v4
@@ -33,11 +33,11 @@ jobs:
       run: pytest
 
     - name: Generate coverage report
-      if: matrix.python-version == '3.11'
+      if: matrix.python-version == '3.13'
       run: pytest --cov --cov-report=xml
 
     - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.11'
+      if: matrix.python-version == '3.13'
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
@@ -54,7 +54,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
 
     - name: Install dependencies
       run: |

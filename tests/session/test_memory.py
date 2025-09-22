@@ -1,4 +1,5 @@
 """Tests for in-memory session storage."""
+
 import pytest
 import asyncio
 import time
@@ -30,7 +31,7 @@ class TestInMemorySessionStorage:
             args={"amount": 100, "currency": "USD"},
             ts=int(time.time() * 1000),
             provider_name="stripe",
-            metadata={"tool": "test"}
+            metadata={"tool": "test"},
         )
 
     @pytest.mark.asyncio
@@ -58,12 +59,10 @@ class TestInMemorySessionStorage:
         paypal_key = SessionKey(provider="paypal", payment_id="pay_123")
 
         stripe_data = SessionData(
-            args={"provider": "stripe"},
-            ts=int(time.time() * 1000)
+            args={"provider": "stripe"}, ts=int(time.time() * 1000)
         )
         paypal_data = SessionData(
-            args={"provider": "paypal"},
-            ts=int(time.time() * 1000)
+            args={"provider": "paypal"}, ts=int(time.time() * 1000)
         )
 
         await storage.set(stripe_key, stripe_data)
@@ -96,7 +95,7 @@ class TestInMemorySessionStorage:
         await storage.set(sample_key, sample_data)
 
         # Simulate time passing (without actually sleeping)
-        with patch('time.time', return_value=time.time() + 3600):
+        with patch("time.time", return_value=time.time() + 3600):
             retrieved = await storage.get(sample_key)
             assert retrieved is not None
 
@@ -184,8 +183,7 @@ class TestInMemorySessionStorage:
     async def test_special_characters_in_keys(self, storage, sample_data):
         """Test handling special characters in keys."""
         special_key = SessionKey(
-            provider="stripe-test:special",
-            payment_id="pay:123:test/special"
+            provider="stripe-test:special", payment_id="pay:123:test/special"
         )
 
         await storage.set(special_key, sample_data)
@@ -202,8 +200,7 @@ class TestInMemorySessionStorage:
 
         # Concurrent sets - last one wins
         await asyncio.gather(
-            storage.set(sample_key, data1),
-            storage.set(sample_key, data2)
+            storage.set(sample_key, data1), storage.set(sample_key, data2)
         )
 
         retrieved = await storage.get(sample_key)

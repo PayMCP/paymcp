@@ -1,6 +1,7 @@
 import functools
 from importlib import import_module
 
+
 def make_flow(name):
     try:
         mod = import_module(f".{name}", __package__)

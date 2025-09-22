@@ -4,19 +4,22 @@ import logging
 import sys
 import threading
 import multiprocessing
-from paymcp.payment.webview import _open_payment_webview, open_payment_webview_if_available
+from paymcp.payment.webview import (
+    _open_payment_webview,
+    open_payment_webview_if_available,
+)
 
 
 class TestOpenPaymentWebview:
     @pytest.fixture
     def mock_logger(self):
-        with patch('paymcp.payment.webview.logger') as mock_log:
+        with patch("paymcp.payment.webview.logger") as mock_log:
             yield mock_log
 
     def test_open_payment_webview_success(self, mock_logger):
         mock_webview = MagicMock()
 
-        with patch.dict('sys.modules', {'webview': mock_webview}):
+        with patch.dict("sys.modules", {"webview": mock_webview}):
             _open_payment_webview("https://test.com/pay")
 
             mock_webview.create_window.assert_called_once_with(
@@ -28,8 +31,11 @@ class TestOpenPaymentWebview:
 
     def test_open_payment_webview_import_error(self, mock_logger):
         # Simulate webview not being installed
-        with patch.dict('sys.modules', {'webview': None}):
-            with patch('builtins.__import__', side_effect=ImportError("No module named 'webview'")):
+        with patch.dict("sys.modules", {"webview": None}):
+            with patch(
+                "builtins.__import__",
+                side_effect=ImportError("No module named 'webview'"),
+            ):
                 _open_payment_webview("https://test.com/pay")
 
                 mock_logger.debug.assert_called_once_with(
@@ -37,7 +43,7 @@ class TestOpenPaymentWebview:
                 )
 
     def test_open_payment_webview_exception_during_import(self, mock_logger):
-        with patch('builtins.__import__', side_effect=Exception("Some error")):
+        with patch("builtins.__import__", side_effect=Exception("Some error")):
             _open_payment_webview("https://test.com/pay")
 
             mock_logger.debug.assert_called_once_with(
@@ -48,7 +54,7 @@ class TestOpenPaymentWebview:
         mock_webview = MagicMock()
         mock_webview.create_window.side_effect = Exception("Window creation failed")
 
-        with patch.dict('sys.modules', {'webview': mock_webview}):
+        with patch.dict("sys.modules", {"webview": mock_webview}):
             _open_payment_webview("https://test.com/pay")
 
             mock_logger.exception.assert_called_once_with(
@@ -59,7 +65,7 @@ class TestOpenPaymentWebview:
         mock_webview = MagicMock()
         mock_webview.start.side_effect = Exception("Start failed")
 
-        with patch.dict('sys.modules', {'webview': mock_webview}):
+        with patch.dict("sys.modules", {"webview": mock_webview}):
             _open_payment_webview("https://test.com/pay")
 
             mock_webview.create_window.assert_called_once()
@@ -71,10 +77,10 @@ class TestOpenPaymentWebview:
 class TestOpenPaymentWebviewIfAvailable:
     @pytest.fixture
     def mock_logger(self):
-        with patch('paymcp.payment.webview.logger') as mock_log:
+        with patch("paymcp.payment.webview.logger") as mock_log:
             yield mock_log
 
-    @patch('paymcp.payment.webview.find_spec')
+    @patch("paymcp.payment.webview.find_spec")
     def test_webview_not_available(self, mock_find_spec, mock_logger):
         mock_find_spec.return_value = None
 
@@ -83,9 +89,9 @@ class TestOpenPaymentWebviewIfAvailable:
         assert result is False
         mock_find_spec.assert_called_once_with("webview")
 
-    @patch('paymcp.payment.webview.find_spec')
-    @patch('sys.platform', 'darwin')
-    @patch('paymcp.payment.webview.multiprocessing.get_context')
+    @patch("paymcp.payment.webview.find_spec")
+    @patch("sys.platform", "darwin")
+    @patch("paymcp.payment.webview.multiprocessing.get_context")
     def test_macos_spawns_process(self, mock_get_context, mock_find_spec, mock_logger):
         mock_find_spec.return_value = MagicMock()  # webview is available
         mock_ctx = MagicMock()
@@ -101,19 +107,21 @@ class TestOpenPaymentWebviewIfAvailable:
 
         # Check Process arguments
         call_args = mock_ctx.Process.call_args
-        assert call_args.kwargs['target'].__name__ == '_open_payment_webview'
-        assert call_args.kwargs['args'] == ("https://test.com/pay",)
-        assert call_args.kwargs['daemon'] is True
+        assert call_args.kwargs["target"].__name__ == "_open_payment_webview"
+        assert call_args.kwargs["args"] == ("https://test.com/pay",)
+        assert call_args.kwargs["daemon"] is True
 
         mock_process.start.assert_called_once()
         mock_logger.info.assert_called_with(
             "[initiate] Started pywebview subprocess for payment url"
         )
 
-    @patch('paymcp.payment.webview.find_spec')
-    @patch('sys.platform', 'linux')
-    @patch('paymcp.payment.webview.threading.Thread')
-    def test_non_macos_starts_thread(self, mock_thread_class, mock_find_spec, mock_logger):
+    @patch("paymcp.payment.webview.find_spec")
+    @patch("sys.platform", "linux")
+    @patch("paymcp.payment.webview.threading.Thread")
+    def test_non_macos_starts_thread(
+        self, mock_thread_class, mock_find_spec, mock_logger
+    ):
         mock_find_spec.return_value = MagicMock()  # webview is available
         mock_thread = MagicMock()
         mock_thread_class.return_value = mock_thread
@@ -125,19 +133,21 @@ class TestOpenPaymentWebviewIfAvailable:
 
         # Check Thread arguments
         call_args = mock_thread_class.call_args
-        assert call_args.kwargs['target'].__name__ == '_open_payment_webview'
-        assert call_args.kwargs['args'] == ("https://test.com/pay",)
-        assert call_args.kwargs['daemon'] is True
+        assert call_args.kwargs["target"].__name__ == "_open_payment_webview"
+        assert call_args.kwargs["args"] == ("https://test.com/pay",)
+        assert call_args.kwargs["daemon"] is True
 
         mock_thread.start.assert_called_once()
         mock_logger.info.assert_called_with(
             "[initiate] Opened pywebview thread for payment url"
         )
 
-    @patch('paymcp.payment.webview.find_spec')
-    @patch('sys.platform', 'win32')
-    @patch('paymcp.payment.webview.threading.Thread')
-    def test_windows_starts_thread(self, mock_thread_class, mock_find_spec, mock_logger):
+    @patch("paymcp.payment.webview.find_spec")
+    @patch("sys.platform", "win32")
+    @patch("paymcp.payment.webview.threading.Thread")
+    def test_windows_starts_thread(
+        self, mock_thread_class, mock_find_spec, mock_logger
+    ):
         mock_find_spec.return_value = MagicMock()  # webview is available
         mock_thread = MagicMock()
         mock_thread_class.return_value = mock_thread
@@ -148,10 +158,10 @@ class TestOpenPaymentWebviewIfAvailable:
         mock_thread_class.assert_called_once()
         mock_thread.start.assert_called_once()
 
-    @patch('paymcp.payment.webview.find_spec')
-    @patch('sys.platform', 'darwin')
-    @patch('paymcp.payment.webview.multiprocessing.get_context')
-    @patch('paymcp.payment.webview.webbrowser.open')
+    @patch("paymcp.payment.webview.find_spec")
+    @patch("sys.platform", "darwin")
+    @patch("paymcp.payment.webview.multiprocessing.get_context")
+    @patch("paymcp.payment.webview.webbrowser.open")
     def test_macos_process_exception_fallback_to_browser(
         self, mock_browser_open, mock_get_context, mock_find_spec, mock_logger
     ):
@@ -169,10 +179,10 @@ class TestOpenPaymentWebviewIfAvailable:
             "[initiate] Opened default browser for payment url"
         )
 
-    @patch('paymcp.payment.webview.find_spec')
-    @patch('sys.platform', 'linux')
-    @patch('paymcp.payment.webview.threading.Thread')
-    @patch('paymcp.payment.webview.webbrowser.open')
+    @patch("paymcp.payment.webview.find_spec")
+    @patch("sys.platform", "linux")
+    @patch("paymcp.payment.webview.threading.Thread")
+    @patch("paymcp.payment.webview.webbrowser.open")
     def test_thread_exception_fallback_to_browser(
         self, mock_browser_open, mock_thread_class, mock_find_spec, mock_logger
     ):
@@ -187,10 +197,10 @@ class TestOpenPaymentWebviewIfAvailable:
         )
         mock_browser_open.assert_called_once_with("https://test.com/pay")
 
-    @patch('paymcp.payment.webview.find_spec')
-    @patch('sys.platform', 'darwin')
-    @patch('paymcp.payment.webview.multiprocessing.get_context')
-    @patch('paymcp.payment.webview.webbrowser.open')
+    @patch("paymcp.payment.webview.find_spec")
+    @patch("sys.platform", "darwin")
+    @patch("paymcp.payment.webview.multiprocessing.get_context")
+    @patch("paymcp.payment.webview.webbrowser.open")
     def test_browser_fallback_also_fails(
         self, mock_browser_open, mock_get_context, mock_find_spec, mock_logger
     ):
@@ -208,7 +218,7 @@ class TestOpenPaymentWebviewIfAvailable:
             "[initiate] Could not open default browser"
         )
 
-    @patch('paymcp.payment.webview.find_spec')
+    @patch("paymcp.payment.webview.find_spec")
     def test_webview_spec_none(self, mock_find_spec, mock_logger):
         mock_find_spec.return_value = None
 

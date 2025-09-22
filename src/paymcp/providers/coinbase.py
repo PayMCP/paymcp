@@ -1,5 +1,3 @@
-
-
 from .base import BasePaymentProvider
 import logging
 
@@ -11,10 +9,10 @@ class CoinbaseProvider(BasePaymentProvider):
         self,
         api_key: str = None,
         apiKey: str = None,
-        success_url: str = 'https://example.com/success',
-        cancel_url: str = 'https://example.com/cancel',
+        success_url: str = "https://example.com/success",
+        cancel_url: str = "https://example.com/cancel",
         logger: logging.Logger = None,
-        # If set to True, payments will be confirmed faster (on PENDING), 
+        # If set to True, payments will be confirmed faster (on PENDING),
         # but there is a small chance something may still go wrong with the payment.
         confirm_on_pending: bool = False,
     ):
@@ -37,7 +35,9 @@ class CoinbaseProvider(BasePaymentProvider):
 
     def create_payment(self, amount: float, currency: str, description: str):
         """Creates a Coinbase Commerce charge and returns (code, hosted_url)."""
-        self.logger.debug(f"Creating Coinbase charge: {amount} {currency} for '{description}'")
+        self.logger.debug(
+            f"Creating Coinbase charge: {amount} {currency} for '{description}'"
+        )
 
         fiat_currency = (currency or "USD").upper()
         if fiat_currency == "USDC":
@@ -71,7 +71,9 @@ class CoinbaseProvider(BasePaymentProvider):
 
         # Coinbase Commerce docs: last timeline entry is the current status.
         # PENDING indicates funds are received on-chain and is typically safe to treat as paid.
-        if last_status in {"COMPLETED", "RESOLVED"} or (last_status == "PENDING" and self.confirm_on_pending):
+        if last_status in {"COMPLETED", "RESOLVED"} or (
+            last_status == "PENDING" and self.confirm_on_pending
+        ):
             return "paid"
         if last_status in {"EXPIRED", "CANCELED"}:
             return "failed"

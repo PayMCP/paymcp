@@ -10,7 +10,7 @@ from paymcp.utils.responseSchema import SimpleActionSchema
 class TestRunElicitationLoop:
     @pytest.fixture
     def mock_logger(self):
-        with patch('paymcp.utils.elicitation.logger') as mock_log:
+        with patch("paymcp.utils.elicitation.logger") as mock_log:
             yield mock_log
 
     @pytest.fixture
@@ -25,7 +25,7 @@ class TestRunElicitationLoop:
         ctx.elicit = AsyncMock()
         # Mock the signature to have response_type parameter
         sig = inspect.signature(lambda message, response_type=None: None)
-        with patch.object(inspect, 'signature', return_value=sig):
+        with patch.object(inspect, "signature", return_value=sig):
             yield ctx
 
     @pytest.fixture
@@ -34,14 +34,16 @@ class TestRunElicitationLoop:
         ctx.elicit = AsyncMock()
         # Mock the signature to NOT have response_type parameter
         sig = inspect.signature(lambda message, schema=None: None)
-        with patch.object(inspect, 'signature', return_value=sig):
+        with patch.object(inspect, "signature", return_value=sig):
             yield ctx
 
     @pytest.mark.asyncio
     async def test_elicitation_loop_accept_action_with_response_type(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="accept")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="accept"
+        )
         mock_provider.get_payment_status.side_effect = ["pending", "paid"]
 
         result = await run_elicitation_loop(
@@ -49,14 +51,13 @@ class TestRunElicitationLoop:
             Mock(),
             "Test message",
             mock_provider,
-            "payment_123"
+            "payment_123",
         )
 
         assert result == "paid"
         assert mock_ctx_with_response_type.elicit.call_count == 2
         mock_ctx_with_response_type.elicit.assert_called_with(
-            message="Test message",
-            response_type=None
+            message="Test message", response_type=None
         )
 
     @pytest.mark.asyncio
@@ -67,24 +68,21 @@ class TestRunElicitationLoop:
         mock_provider.get_payment_status.return_value = "paid"
 
         result = await run_elicitation_loop(
-            mock_ctx_with_schema,
-            Mock(),
-            "Test message",
-            mock_provider,
-            "payment_456"
+            mock_ctx_with_schema, Mock(), "Test message", mock_provider, "payment_456"
         )
 
         assert result == "paid"
         mock_ctx_with_schema.elicit.assert_called_once_with(
-            message="Test message",
-            schema=SimpleActionSchema
+            message="Test message", schema=SimpleActionSchema
         )
 
     @pytest.mark.asyncio
     async def test_elicitation_loop_cancel_action(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="cancel")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="cancel"
+        )
 
         with pytest.raises(RuntimeError, match="Payment canceled by user"):
             await run_elicitation_loop(
@@ -92,16 +90,20 @@ class TestRunElicitationLoop:
                 Mock(),
                 "Test message",
                 mock_provider,
-                "payment_789"
+                "payment_789",
             )
 
-        mock_logger.debug.assert_any_call("[run_elicitation_loop] User canceled payment")
+        mock_logger.debug.assert_any_call(
+            "[run_elicitation_loop] User canceled payment"
+        )
 
     @pytest.mark.asyncio
     async def test_elicitation_loop_decline_action(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="decline")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="decline"
+        )
 
         with pytest.raises(RuntimeError, match="Payment canceled by user"):
             await run_elicitation_loop(
@@ -109,14 +111,16 @@ class TestRunElicitationLoop:
                 Mock(),
                 "Test message",
                 mock_provider,
-                "payment_999"
+                "payment_999",
             )
 
     @pytest.mark.asyncio
     async def test_elicitation_loop_payment_canceled_status(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="accept")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="accept"
+        )
         mock_provider.get_payment_status.return_value = "canceled"
 
         result = await run_elicitation_loop(
@@ -124,7 +128,7 @@ class TestRunElicitationLoop:
             Mock(),
             "Test message",
             mock_provider,
-            "payment_canceled"
+            "payment_canceled",
         )
 
         assert result == "canceled"
@@ -133,7 +137,9 @@ class TestRunElicitationLoop:
     async def test_elicitation_loop_max_attempts_reached(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="accept")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="accept"
+        )
         mock_provider.get_payment_status.return_value = "pending"
 
         result = await run_elicitation_loop(
@@ -142,7 +148,7 @@ class TestRunElicitationLoop:
             "Test message",
             mock_provider,
             "payment_pending",
-            max_attempts=3
+            max_attempts=3,
         )
 
         assert result == "pending"
@@ -154,7 +160,7 @@ class TestRunElicitationLoop:
     ):
         mock_ctx_with_response_type.elicit.side_effect = [
             Exception("unexpected elicitation action: accept"),
-            SimpleNamespace(action="accept")
+            SimpleNamespace(action="accept"),
         ]
         mock_provider.get_payment_status.return_value = "paid"
 
@@ -163,7 +169,7 @@ class TestRunElicitationLoop:
             Mock(),
             "Test message",
             mock_provider,
-            "payment_accept_exception"
+            "payment_accept_exception",
         )
 
         assert result == "paid"
@@ -185,7 +191,7 @@ class TestRunElicitationLoop:
                 Mock(),
                 "Test message",
                 mock_provider,
-                "payment_cancel_exception"
+                "payment_cancel_exception",
             )
 
         mock_logger.debug.assert_any_call(
@@ -206,7 +212,7 @@ class TestRunElicitationLoop:
                 Mock(),
                 "Test message",
                 mock_provider,
-                "payment_decline_exception"
+                "payment_decline_exception",
             )
 
     @pytest.mark.asyncio
@@ -217,13 +223,15 @@ class TestRunElicitationLoop:
             "unexpected elicitation action: unknown"
         )
 
-        with pytest.raises(RuntimeError, match="Elicitation failed during confirmation loop"):
+        with pytest.raises(
+            RuntimeError, match="Elicitation failed during confirmation loop"
+        ):
             await run_elicitation_loop(
                 mock_ctx_with_response_type,
                 Mock(),
                 "Test message",
                 mock_provider,
-                "payment_unknown_action"
+                "payment_unknown_action",
             )
 
     @pytest.mark.asyncio
@@ -232,13 +240,15 @@ class TestRunElicitationLoop:
     ):
         mock_ctx_with_response_type.elicit.side_effect = Exception("General error")
 
-        with pytest.raises(RuntimeError, match="Elicitation failed during confirmation loop"):
+        with pytest.raises(
+            RuntimeError, match="Elicitation failed during confirmation loop"
+        ):
             await run_elicitation_loop(
                 mock_ctx_with_response_type,
                 Mock(),
                 "Test message",
                 mock_provider,
-                "payment_general_error"
+                "payment_general_error",
             )
 
         mock_logger.warning.assert_called_with(
@@ -249,7 +259,9 @@ class TestRunElicitationLoop:
     async def test_elicitation_loop_custom_max_attempts(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="accept")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="accept"
+        )
         mock_provider.get_payment_status.return_value = "pending"
 
         result = await run_elicitation_loop(
@@ -258,7 +270,7 @@ class TestRunElicitationLoop:
             "Test message",
             mock_provider,
             "payment_custom",
-            max_attempts=2
+            max_attempts=2,
         )
 
         assert result == "pending"
@@ -268,7 +280,9 @@ class TestRunElicitationLoop:
     async def test_elicitation_loop_payment_becomes_paid(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="accept")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="accept"
+        )
         mock_provider.get_payment_status.side_effect = ["pending", "pending", "paid"]
 
         result = await run_elicitation_loop(
@@ -276,7 +290,7 @@ class TestRunElicitationLoop:
             Mock(),
             "Test message",
             mock_provider,
-            "payment_eventual_success"
+            "payment_eventual_success",
         )
 
         assert result == "paid"
@@ -286,7 +300,9 @@ class TestRunElicitationLoop:
     async def test_elicitation_loop_logging(
         self, mock_ctx_with_response_type, mock_provider, mock_logger
     ):
-        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(action="accept")
+        mock_ctx_with_response_type.elicit.return_value = SimpleNamespace(
+            action="accept"
+        )
         mock_provider.get_payment_status.return_value = "paid"
 
         await run_elicitation_loop(
@@ -294,7 +310,7 @@ class TestRunElicitationLoop:
             Mock(),
             "Test message",
             mock_provider,
-            "payment_logging"
+            "payment_logging",
         )
 
         # Check logging calls

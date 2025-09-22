@@ -1,4 +1,5 @@
 """Tests for progress payment flow."""
+
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock, patch
@@ -42,11 +43,15 @@ class TestProgressFlow:
         wrapper = make_paid_wrapper(mock_function, mock_mcp, mock_provider, price_info)
 
         assert wrapper is not None
-        assert hasattr(wrapper, '__name__')
-        assert wrapper.__name__ == "test_func"  # functools.wraps preserves original name
+        assert hasattr(wrapper, "__name__")
+        assert (
+            wrapper.__name__ == "test_func"
+        )  # functools.wraps preserves original name
 
     @pytest.mark.asyncio
-    async def test_progress_monitoring_flow(self, mock_function, mock_mcp, mock_provider):
+    async def test_progress_monitoring_flow(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test progress flow with payment monitoring."""
         price_info = {"price": 10, "currency": "USD"}
 
@@ -56,7 +61,7 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.return_value = None  # No existing session
             mock_storage.return_value = storage
@@ -69,7 +74,9 @@ class TestProgressFlow:
             assert result == "result"
 
     @pytest.mark.asyncio
-    async def test_progress_with_paid_session(self, mock_function, mock_mcp, mock_provider):
+    async def test_progress_with_paid_session(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test progress flow with already paid session."""
         price_info = {"price": 10, "currency": "USD"}
 
@@ -82,14 +89,15 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             # Existing paid session
             from paymcp.session.types import SessionData
+
             storage.get.return_value = SessionData(
                 args={"amount": 10, "currency": "USD"},
                 ts=123456,
-                provider_name="test_provider"
+                provider_name="test_provider",
             )
             mock_storage.return_value = storage
 
@@ -114,7 +122,7 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(slow_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -133,7 +141,9 @@ class TestProgressFlow:
             assert ctx.report_progress.call_count >= 1
 
     @pytest.mark.asyncio
-    async def test_progress_canceled_payment(self, mock_function, mock_mcp, mock_provider):
+    async def test_progress_canceled_payment(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test progress flow when payment is canceled."""
         price_info = {"price": 10, "currency": "USD"}
 
@@ -143,7 +153,7 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -158,7 +168,9 @@ class TestProgressFlow:
             assert "Payment canceled" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_progress_monitoring_error_handling(self, mock_function, mock_mcp, mock_provider):
+    async def test_progress_monitoring_error_handling(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test error handling in progress monitoring."""
         price_info = {"price": 10, "currency": "USD"}
 
@@ -168,7 +180,7 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -176,7 +188,7 @@ class TestProgressFlow:
             # Test error handling during progress polling
             mock_provider.get_payment_status.side_effect = Exception("Provider error")
 
-            with patch('src.paymcp.payment.flows.progress.logger') as mock_logger:
+            with patch("src.paymcp.payment.flows.progress.logger") as mock_logger:
                 # Progress flow should handle provider errors gracefully
                 with pytest.raises(Exception, match="Provider error"):
                     await wrapper(ctx=mock_mcp)

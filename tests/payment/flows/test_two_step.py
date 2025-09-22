@@ -1,4 +1,5 @@
 """Tests for two-step payment flow."""
+
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from paymcp.payment.flows.two_step import make_paid_wrapper
@@ -38,11 +39,15 @@ class TestTwoStepFlow:
         wrapper = make_paid_wrapper(mock_function, mock_mcp, mock_provider, price_info)
 
         assert wrapper is not None
-        assert hasattr(wrapper, '__name__')
-        assert wrapper.__name__ == "test_func"  # functools.wraps preserves original name
+        assert hasattr(wrapper, "__name__")
+        assert (
+            wrapper.__name__ == "test_func"
+        )  # functools.wraps preserves original name
 
     @pytest.mark.asyncio
-    async def test_payment_initiation_flow(self, mock_function, mock_mcp, mock_provider):
+    async def test_payment_initiation_flow(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test payment initiation returns payment info."""
         price_info = {"price": 10, "currency": "USD"}
 
@@ -52,7 +57,7 @@ class TestTwoStepFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.set.return_value = None
             mock_storage.return_value = storage
@@ -93,12 +98,14 @@ class TestTwoStepFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch('paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.set.return_value = None
             mock_storage.return_value = storage
 
-            with patch('paymcp.payment.flows.two_step.open_payment_webview_if_available') as mock_webview:
+            with patch(
+                "paymcp.payment.flows.two_step.open_payment_webview_if_available"
+            ) as mock_webview:
                 # Test with webview available
                 mock_webview.return_value = True
                 result = await wrapper()

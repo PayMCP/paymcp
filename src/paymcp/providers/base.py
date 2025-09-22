@@ -3,10 +3,13 @@ from typing import Tuple
 import logging
 import requests
 
+
 class BasePaymentProvider(ABC):
     """Minimal interface every provider must implement."""
 
-    def __init__(self, api_key: str = None, apiKey: str = None, logger: logging.Logger = None):
+    def __init__(
+        self, api_key: str = None, apiKey: str = None, logger: logging.Logger = None
+    ):
         self.api_key = api_key if api_key is not None else apiKey
         self.logger = logger or logging.getLogger(self.__class__.__name__)
 
@@ -29,7 +32,9 @@ class BasePaymentProvider(ABC):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             resp.raise_for_status()
-            self.logger.debug(f"HTTP {method} {url} succeeded with status {resp.status_code}")
+            self.logger.debug(
+                f"HTTP {method} {url} succeeded with status {resp.status_code}"
+            )
             return resp.json()
         except requests.exceptions.HTTPError as e:
             self.logger.error(f"HTTP error occurred: {e}")

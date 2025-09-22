@@ -9,20 +9,25 @@ import os
 SANDBOX_URL = "https://connect.squareupsandbox.com"
 PRODUCTION_URL = "https://connect.squareup.com"
 
+
 class SquareProvider(BasePaymentProvider):
-    def __init__(self,
-                access_token: str,
-                location_id: str,
-                logger: logging.Logger = None,
-                redirect_url: str = 'https://example.com/success',
-                sandbox: bool = True,
-                api_version: str = None):
+    def __init__(
+        self,
+        access_token: str,
+        location_id: str,
+        logger: logging.Logger = None,
+        redirect_url: str = "https://example.com/success",
+        sandbox: bool = True,
+        api_version: str = None,
+    ):
         self.access_token = access_token
         self.location_id = location_id
         self.redirect_url = redirect_url
         self.base_url = SANDBOX_URL if sandbox else PRODUCTION_URL
         # Use provided version, then env var, then default to latest
-        self.api_version = api_version or os.environ.get('SQUARE_API_VERSION', '2025-03-19')
+        self.api_version = api_version or os.environ.get(
+            "SQUARE_API_VERSION", "2025-03-19"
+        )
         super().__init__(logger=logger)
         self.logger.debug(f"Square ready (API version: {self.api_version})")
 
@@ -40,12 +45,16 @@ class SquareProvider(BasePaymentProvider):
     def _generate_idempotency_key(self) -> str:
         """Generate unique idempotency key for Square API calls."""
         timestamp = str(int(time.time() * 1000))
-        random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        random_str = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=8)
+        )
         return f"{timestamp}-{random_str}"
 
     def create_payment(self, amount: float, currency: str, description: str):
         """Creates a Square Payment Link and returns (payment_id, payment_url)."""
-        self.logger.debug(f"Creating Square payment: {amount} {currency} for '{description}'")
+        self.logger.debug(
+            f"Creating Square payment: {amount} {currency} for '{description}'"
+        )
 
         # Convert to cents
         amount_cents = int(amount * 100)
@@ -57,18 +66,15 @@ class SquareProvider(BasePaymentProvider):
             "idempotency_key": idempotency_key,
             "quick_pay": {
                 "name": description,
-                "price_money": {
-                    "amount": amount_cents,
-                    "currency": currency.upper()
-                },
-                "location_id": self.location_id
-            }
+                "price_money": {"amount": amount_cents, "currency": currency.upper()},
+                "location_id": self.location_id,
+            },
         }
 
         resp = requests.post(
             f"{self.base_url}/v2/online-checkout/payment-links",
             headers=self._build_headers(),
-            json=payload
+            json=payload,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -90,7 +96,7 @@ class SquareProvider(BasePaymentProvider):
             # Get the payment link to find the order ID
             resp = requests.get(
                 f"{self.base_url}/v2/online-checkout/payment-links/{payment_id}",
-                headers=self._build_headers()
+                headers=self._build_headers(),
             )
             resp.raise_for_status()
             payment_data = resp.json()
@@ -104,7 +110,7 @@ class SquareProvider(BasePaymentProvider):
             # Check the order status
             order_resp = requests.get(
                 f"{self.base_url}/v2/orders/{order_id}?location_id={self.location_id}",
-                headers=self._build_headers()
+                headers=self._build_headers(),
             )
             order_resp.raise_for_status()
             order_data = order_resp.json()

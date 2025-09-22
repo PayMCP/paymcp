@@ -16,7 +16,9 @@ class TestMakeFlow:
         mock_mod, mock_wrapper = mock_module
         mock_wrapper.return_value = "wrapped_func"
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod) as mock_import:
+        with patch(
+            "paymcp.payment.flows.import_module", return_value=mock_mod
+        ) as mock_import:
             wrapper_factory = make_flow("two_step")
 
             # Verify import was called correctly
@@ -28,13 +30,15 @@ class TestMakeFlow:
             mock_provider = Mock()
             mock_price_info = {"amount": 10, "currency": "USD"}
 
-            result = wrapper_factory(mock_func, mock_mcp, mock_provider, mock_price_info)
+            result = wrapper_factory(
+                mock_func, mock_mcp, mock_provider, mock_price_info
+            )
 
             mock_wrapper.assert_called_once_with(
                 func=mock_func,
                 mcp=mock_mcp,
                 provider=mock_provider,
-                price_info=mock_price_info
+                price_info=mock_price_info,
             )
             assert result == "wrapped_func"
 
@@ -42,7 +46,9 @@ class TestMakeFlow:
         mock_mod, mock_wrapper = mock_module
         mock_wrapper.return_value = "progress_wrapper"
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod) as mock_import:
+        with patch(
+            "paymcp.payment.flows.import_module", return_value=mock_mod
+        ) as mock_import:
             wrapper_factory = make_flow("progress")
 
             mock_import.assert_called_once_with(".progress", "paymcp.payment.flows")
@@ -55,7 +61,9 @@ class TestMakeFlow:
         mock_mod, mock_wrapper = mock_module
         mock_wrapper.return_value = "elicitation_wrapper"
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod) as mock_import:
+        with patch(
+            "paymcp.payment.flows.import_module", return_value=mock_mod
+        ) as mock_import:
             wrapper_factory = make_flow("elicitation")
 
             mock_import.assert_called_once_with(".elicitation", "paymcp.payment.flows")
@@ -66,14 +74,18 @@ class TestMakeFlow:
     def test_make_flow_oob(self, mock_module):
         mock_mod, mock_wrapper = mock_module
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod) as mock_import:
+        with patch(
+            "paymcp.payment.flows.import_module", return_value=mock_mod
+        ) as mock_import:
             wrapper_factory = make_flow("oob")
 
             mock_import.assert_called_once_with(".oob", "paymcp.payment.flows")
             assert callable(wrapper_factory)
 
     def test_make_flow_unknown_flow(self):
-        with patch('src.paymcp.payment.flows.import_module', side_effect=ModuleNotFoundError()):
+        with patch(
+            "src.paymcp.payment.flows.import_module", side_effect=ModuleNotFoundError()
+        ):
             with pytest.raises(ValueError, match="Unknown payment flow: nonexistent"):
                 make_flow("nonexistent")
 
@@ -82,7 +94,7 @@ class TestMakeFlow:
         # Remove make_paid_wrapper attribute
         del mock_mod.make_paid_wrapper
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod):
+        with patch("paymcp.payment.flows.import_module", return_value=mock_mod):
             with pytest.raises(AttributeError):
                 wrapper_factory = make_flow("broken")
                 # Try to use the wrapper factory
@@ -91,7 +103,7 @@ class TestMakeFlow:
     def test_make_flow_wrapper_factory_preserves_arguments(self, mock_module):
         mock_mod, mock_wrapper = mock_module
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod):
+        with patch("paymcp.payment.flows.import_module", return_value=mock_mod):
             wrapper_factory = make_flow("test_flow")
 
             # Test with specific arguments
@@ -112,7 +124,9 @@ class TestMakeFlow:
     def test_make_flow_multiple_calls_same_flow(self, mock_module):
         mock_mod, mock_wrapper = mock_module
 
-        with patch('paymcp.payment.flows.import_module', return_value=mock_mod) as mock_import:
+        with patch(
+            "paymcp.payment.flows.import_module", return_value=mock_mod
+        ) as mock_import:
             # Get wrapper factory twice for same flow
             wrapper_factory1 = make_flow("two_step")
             wrapper_factory2 = make_flow("two_step")
@@ -132,7 +146,7 @@ class TestMakeFlow:
         mock_mod2 = MagicMock()
         mock_mod2.make_paid_wrapper = Mock(return_value="wrapper2")
 
-        with patch('paymcp.payment.flows.import_module') as mock_import:
+        with patch("paymcp.payment.flows.import_module") as mock_import:
             mock_import.side_effect = [mock_mod1, mock_mod2]
 
             wrapper1 = make_flow("two_step")

@@ -3,13 +3,14 @@ import logging
 
 BASE_URL = "https://api.stripe.com/v1"
 
+
 class StripeProvider(BasePaymentProvider):
     def __init__(
         self,
-        api_key: str = None, 
+        api_key: str = None,
         apiKey: str = None,
-        success_url: str = 'https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}',
-        cancel_url: str = 'https://yoururl.com/cancel',
+        success_url: str = "https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url: str = "https://yoururl.com/cancel",
         logger: logging.Logger = None,
     ):
         super().__init__(api_key, apiKey, logger=logger)
@@ -22,7 +23,9 @@ class StripeProvider(BasePaymentProvider):
 
     def create_payment(self, amount: float, currency: str, description: str):
         """Creates a Stripe Checkout session and returns (session_id, session_url)."""
-        self.logger.debug(f"Creating Stripe payment: {amount} {currency} for '{description}'")
+        self.logger.debug(
+            f"Creating Stripe payment: {amount} {currency} for '{description}'"
+        )
         data = {
             "mode": "payment",
             "success_url": self.success_url,

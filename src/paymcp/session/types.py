@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Literal
 
+
 @dataclass
 class SessionKey:
     provider: str
@@ -10,6 +11,7 @@ class SessionKey:
     def to_str(self) -> str:
         return f"{self.provider}:{self.payment_id}"
 
+
 @dataclass
 class SessionData:
     args: Dict[str, Any]
@@ -17,9 +19,12 @@ class SessionData:
     provider_name: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
+
 class ISessionStorage(ABC):
     @abstractmethod
-    async def set(self, key: SessionKey, data: SessionData, ttl_seconds: Optional[int] = None) -> None:
+    async def set(
+        self, key: SessionKey, data: SessionData, ttl_seconds: Optional[int] = None
+    ) -> None:
         pass
 
     @abstractmethod
@@ -42,7 +47,8 @@ class ISessionStorage(ABC):
     async def cleanup(self) -> None:
         pass
 
+
 @dataclass
 class SessionStorageConfig:
-    type: Literal['memory', 'redis', 'custom']
+    type: Literal["memory", "redis", "custom"]
     options: Optional[Dict[str, Any]] = None

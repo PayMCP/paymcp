@@ -1,5 +1,6 @@
 from .base import BasePaymentProvider
 import logging
+
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.walleot.com/v1"
@@ -8,7 +9,7 @@ BASE_URL = "https://api.walleot.com/v1"
 class WalleotProvider(BasePaymentProvider):
     def __init__(
         self,
-        api_key: str = None, 
+        api_key: str = None,
         apiKey: str = None,
         logger: logging.Logger = None,
     ):
@@ -26,7 +27,9 @@ class WalleotProvider(BasePaymentProvider):
 
     def create_payment(self, amount: float, currency: str, description: str):
         """Creates a Walleot payment session and returns (session_id, session_url)."""
-        self.logger.debug(f"Creating Walleot payment session: {amount} {currency} for '{description}'")
+        self.logger.debug(
+            f"Creating Walleot payment session: {amount} {currency} for '{description}'"
+        )
         data = {
             "amount": int(amount * 100),
             "currency": currency.lower(),

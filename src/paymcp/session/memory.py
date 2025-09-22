@@ -5,10 +5,12 @@ from dataclasses import dataclass
 
 from .types import ISessionStorage, SessionData, SessionKey
 
+
 @dataclass
 class StoredSession:
     data: SessionData
     expires_at: Optional[float] = None
+
 
 class InMemorySessionStorage(ISessionStorage):
     def __init__(self):
@@ -29,16 +31,15 @@ class InMemorySessionStorage(ISessionStorage):
             await asyncio.sleep(60)
             await self.cleanup()
 
-    async def set(self, key: SessionKey, data: SessionData, ttl_seconds: Optional[int] = None) -> None:
+    async def set(
+        self, key: SessionKey, data: SessionData, ttl_seconds: Optional[int] = None
+    ) -> None:
         composite_key = key.to_str()
         expires_at = None
         if ttl_seconds:
             expires_at = time.time() + ttl_seconds
 
-        self.storage[composite_key] = StoredSession(
-            data=data,
-            expires_at=expires_at
-        )
+        self.storage[composite_key] = StoredSession(data=data, expires_at=expires_at)
 
     async def get(self, key: SessionKey) -> Optional[SessionData]:
         composite_key = key.to_str()

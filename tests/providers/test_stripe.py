@@ -15,7 +15,7 @@ class TestStripeProvider:
             api_key="test_api_key",
             success_url="https://test.com/success?session_id={CHECKOUT_SESSION_ID}",
             cancel_url="https://test.com/cancel",
-            logger=mock_logger
+            logger=mock_logger,
         )
         provider._request = Mock()
         return provider
@@ -23,8 +23,11 @@ class TestStripeProvider:
     def test_init_with_api_key(self, mock_logger):
         provider = StripeProvider(api_key="test_key", logger=mock_logger)
         assert provider.api_key == "test_key"
-        assert provider.success_url == 'https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}'
-        assert provider.cancel_url == 'https://yoururl.com/cancel'
+        assert (
+            provider.success_url
+            == "https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}"
+        )
+        assert provider.cancel_url == "https://yoururl.com/cancel"
         mock_logger.debug.assert_called_with("Stripe ready")
 
     def test_init_with_apiKey_fallback(self, mock_logger):
@@ -37,7 +40,7 @@ class TestStripeProvider:
             api_key="test_key",
             success_url="https://custom.com/success",
             cancel_url="https://custom.com/cancel",
-            logger=mock_logger
+            logger=mock_logger,
         )
         assert provider.success_url == "https://custom.com/success"
         assert provider.cancel_url == "https://custom.com/cancel"
@@ -48,14 +51,12 @@ class TestStripeProvider:
     def test_create_payment_success(self, stripe_provider, mock_logger):
         mock_response = {
             "id": "cs_test_123",
-            "url": "https://checkout.stripe.com/pay/cs_test_123"
+            "url": "https://checkout.stripe.com/pay/cs_test_123",
         }
         stripe_provider._request.return_value = mock_response
 
         session_id, session_url = stripe_provider.create_payment(
-            amount=100.50,
-            currency="USD",
-            description="Test Payment"
+            amount=100.50, currency="USD", description="Test Payment"
         )
 
         assert session_id == "cs_test_123"
@@ -72,9 +73,7 @@ class TestStripeProvider:
         }
 
         stripe_provider._request.assert_called_once_with(
-            "POST",
-            f"{BASE_URL}/checkout/sessions",
-            expected_data
+            "POST", f"{BASE_URL}/checkout/sessions", expected_data
         )
         mock_logger.debug.assert_called_with(
             "Creating Stripe payment: 100.5 USD for 'Test Payment'"
@@ -110,28 +109,21 @@ class TestStripeProvider:
         assert data["line_items[0][price_data][unit_amount]"] == 1099
 
     def test_get_payment_status_paid(self, stripe_provider, mock_logger):
-        mock_response = {
-            "id": "cs_test_123",
-            "payment_status": "paid"
-        }
+        mock_response = {"id": "cs_test_123", "payment_status": "paid"}
         stripe_provider._request.return_value = mock_response
 
         status = stripe_provider.get_payment_status("cs_test_123")
 
         assert status == "paid"
         stripe_provider._request.assert_called_once_with(
-            "GET",
-            f"{BASE_URL}/checkout/sessions/cs_test_123"
+            "GET", f"{BASE_URL}/checkout/sessions/cs_test_123"
         )
         mock_logger.debug.assert_called_with(
             "Checking Stripe payment status for: %s", "cs_test_123"
         )
 
     def test_get_payment_status_unpaid(self, stripe_provider):
-        mock_response = {
-            "id": "cs_test_456",
-            "payment_status": "unpaid"
-        }
+        mock_response = {"id": "cs_test_456", "payment_status": "unpaid"}
         stripe_provider._request.return_value = mock_response
 
         status = stripe_provider.get_payment_status("cs_test_456")
@@ -139,10 +131,7 @@ class TestStripeProvider:
         assert status == "unpaid"
 
     def test_get_payment_status_no_payment_required(self, stripe_provider):
-        mock_response = {
-            "id": "cs_test_789",
-            "payment_status": "no_payment_required"
-        }
+        mock_response = {"id": "cs_test_789", "payment_status": "no_payment_required"}
         stripe_provider._request.return_value = mock_response
 
         status = stripe_provider.get_payment_status("cs_test_789")

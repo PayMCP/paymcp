@@ -1,4 +1,5 @@
 """Edge case tests for achieving complete code coverage."""
+
 import pytest
 import sys
 from unittest.mock import Mock, patch, AsyncMock
@@ -13,12 +14,12 @@ class TestEdgeCases:
         # Save original modules
         original_modules = {}
         for key in list(sys.modules.keys()):
-            if 'paymcp' in key:
+            if "paymcp" in key:
                 original_modules[key] = sys.modules[key]
                 del sys.modules[key]
 
         try:
-            with patch('importlib.metadata.version') as mock_version:
+            with patch("importlib.metadata.version") as mock_version:
                 mock_version.side_effect = PackageNotFoundError("paymcp")
 
                 # Import with mocked version
@@ -29,7 +30,7 @@ class TestEdgeCases:
         finally:
             # Restore original modules
             for key in list(sys.modules.keys()):
-                if 'paymcp' in key:
+                if "paymcp" in key:
                     del sys.modules[key]
             sys.modules.update(original_modules)
 
@@ -49,7 +50,7 @@ class TestEdgeCases:
 
     def test_memory_storage_no_event_loop(self):
         """Test memory storage initialization without event loop."""
-        with patch('asyncio.get_event_loop') as mock_get_loop:
+        with patch("asyncio.get_event_loop") as mock_get_loop:
             mock_get_loop.side_effect = RuntimeError("No event loop")
 
             from paymcp.session.memory import InMemorySessionStorage
@@ -118,7 +119,9 @@ class TestEdgeCases:
 
         wrapper = make_paid_wrapper(async_func, mcp, provider, price_info)
 
-        with patch('src.paymcp.session.manager.SessionManager.get_storage') as mock_storage:
+        with patch(
+            "src.paymcp.session.manager.SessionManager.get_storage"
+        ) as mock_storage:
             storage = AsyncMock()
             storage.set.side_effect = Exception("Storage error")
             mock_storage.return_value = storage
@@ -152,7 +155,7 @@ class TestEdgeCases:
 
     def test_webview_import_errors(self):
         """Test webview handling when import fails."""
-        with patch('importlib.util.find_spec', return_value=None):
+        with patch("importlib.util.find_spec", return_value=None):
             from paymcp.payment.webview import open_payment_webview_if_available
 
             result = open_payment_webview_if_available("https://test.com")
@@ -176,7 +179,9 @@ class TestEdgeCases:
             # Correct argument order: ctx, func, message, provider, payment_id
             func = Mock(__name__="test_func")
             message = "Please pay https://pay.test"
-            result = await run_elicitation_loop(mcp, func, message, provider, "payment_id", 1)
+            result = await run_elicitation_loop(
+                mcp, func, message, provider, "payment_id", 1
+            )
             assert result == "pending"
 
         asyncio.run(test_elicitation())

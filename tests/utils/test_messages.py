@@ -2,7 +2,7 @@ import pytest
 from paymcp.utils.messages import (
     open_link_message,
     opened_webview_message,
-    description_with_price
+    description_with_price,
 )
 
 
@@ -93,7 +93,7 @@ class TestOpenedWebviewMessage:
             "https://stripe.com/pay/cs_123",
             "https://paypal.com/checkout/456",
             "https://square.link/u/789",
-            "http://localhost:3000/pay"
+            "http://localhost:3000/pay",
         ]
         for url in urls:
             result = opened_webview_message(url, 100, "USD")

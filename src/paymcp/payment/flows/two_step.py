@@ -6,6 +6,7 @@ from ..webview import open_payment_webview_if_available
 from ...session import SessionManager, SessionKey, SessionData
 import logging
 import time
+
 logger = logging.getLogger(__name__)
 
 # Session storage for payment args
@@ -27,7 +28,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
     # --- Step 2: payment confirmation -----------------------------------------
     @mcp.tool(
         name=confirm_tool_name,
-        description=f"Confirm payment and execute {func.__name__}()"
+        description=f"Confirm payment and execute {func.__name__}()",
     )
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
@@ -35,23 +36,23 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         session_key = SessionKey(provider=provider_name, payment_id=str(payment_id))
 
         stored = await session_storage.get(session_key)
-        logger.debug(f"[confirm_tool] Looking up session with provider={provider_name} payment_id={payment_id}")
+        logger.debug(
+            f"[confirm_tool] Looking up session with provider={provider_name} payment_id={payment_id}"
+        )
 
         if stored is None:
             raise RuntimeError("Unknown or expired payment_id")
 
         status = provider.get_payment_status(payment_id)
         if status != "paid":
-            raise RuntimeError(
-                f"Payment status is {status}, expected 'paid'"
-            )
+            raise RuntimeError(f"Payment status is {status}, expected 'paid'")
         logger.debug(f"[confirm_tool] Calling {func.__name__} with args: {stored.args}")
 
         await session_storage.delete(session_key)
 
         # Call the original tool with its initial arguments
-        stored_args = stored.args.get('args', ())
-        stored_kwargs = stored.args.get('kwargs', {})
+        stored_args = stored.args.get("args", ())
+        stored_kwargs = stored.args.get("kwargs", {})
         return await func(*stored_args, **stored_kwargs)
 
     # --- Step 1: payment initiation -------------------------------------------
@@ -60,10 +61,10 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         payment_id, payment_url = provider.create_payment(
             amount=price_info["price"],
             currency=price_info["currency"],
-            description=f"{func.__name__}() execution fee"
+            description=f"{func.__name__}() execution fee",
         )
 
-        if (open_payment_webview_if_available(payment_url)):
+        if open_payment_webview_if_available(payment_url):
             message = opened_webview_message(
                 payment_url, price_info["price"], price_info["currency"]
             )
@@ -78,10 +79,10 @@ def make_paid_wrapper(func, mcp, provider, price_info):
 
         # Stash original args with session storage (15 minutes TTL)
         session_data = SessionData(
-            args={'args': args, 'kwargs': kwargs},
+            args={"args": args, "kwargs": kwargs},
             ts=int(time.time() * 1000),
             provider_name=provider_name,
-            metadata={"tool_name": func.__name__}
+            metadata={"tool_name": func.__name__},
         )
         await session_storage.set(session_key, session_data, 900)  # 15 minutes TTL
 

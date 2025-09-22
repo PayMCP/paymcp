@@ -1,4 +1,5 @@
 """Tests for the paymcp.core module."""
+
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from paymcp.core import PayMCP
@@ -28,11 +29,7 @@ class TestPayMCP:
     @pytest.fixture
     def providers_config(self):
         """Create a test providers configuration."""
-        return {
-            "stripe": {
-                "api_key": "sk_test_123"
-            }
-        }
+        return {"stripe": {"api_key": "sk_test_123"}}
 
     def test_initialization_default_flow(self, mock_mcp_instance, providers_config):
         """Test PayMCP initialization with default flow."""
@@ -45,7 +42,7 @@ class TestPayMCP:
         paymcp = PayMCP(
             mock_mcp_instance,
             providers=providers_config,
-            payment_flow=PaymentFlow.ELICITATION
+            payment_flow=PaymentFlow.ELICITATION,
         )
         assert paymcp.mcp == mock_mcp_instance
         assert paymcp.providers is not None
@@ -55,9 +52,9 @@ class TestPayMCP:
         paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
 
         # Verify that the MCP tool method was accessed
-        assert hasattr(paymcp, '_patch_tool')
+        assert hasattr(paymcp, "_patch_tool")
 
-    @patch('paymcp.core.build_providers')
+    @patch("paymcp.core.build_providers")
     def test_providers_initialization(self, mock_build_providers, mock_mcp_instance):
         """Test that providers are correctly initialized."""
         mock_providers = {"stripe": Mock(spec=BasePaymentProvider)}
@@ -75,7 +72,7 @@ class TestPayMCP:
         assert PaymentFlow.ELICITATION.value == "elicitation"
         assert PaymentFlow.PROGRESS.value == "progress"
 
-    @patch('paymcp.core.make_flow')
+    @patch("paymcp.core.make_flow")
     def test_flow_factory(self, mock_make_flow, mock_mcp_instance, providers_config):
         """Test that flow factory is called with correct parameters."""
         mock_wrapper = Mock()
@@ -84,7 +81,7 @@ class TestPayMCP:
         paymcp = PayMCP(
             mock_mcp_instance,
             providers=providers_config,
-            payment_flow=PaymentFlow.PROGRESS
+            payment_flow=PaymentFlow.PROGRESS,
         )
 
         mock_make_flow.assert_called_once_with("progress")
@@ -107,14 +104,14 @@ class TestPayMCP:
             return "result"
 
         # Verify that tool patching mechanism exists
-        assert hasattr(paymcp, '_patch_tool')
+        assert hasattr(paymcp, "_patch_tool")
 
     def test_no_provider_error(self, mock_mcp_instance):
         """Test error when no provider is configured."""
         paymcp = PayMCP(mock_mcp_instance, providers={})
         assert len(paymcp.providers) == 0
 
-    @patch('paymcp.core.logger')
+    @patch("paymcp.core.logger")
     def test_version_logging(self, mock_logger, mock_mcp_instance, providers_config):
         """Test that version is logged during initialization."""
         PayMCP(mock_mcp_instance, providers=providers_config)
@@ -122,18 +119,18 @@ class TestPayMCP:
         # Check that debug logging was called
         assert mock_logger.debug.called
 
-    @patch('paymcp.core.build_providers')
+    @patch("paymcp.core.build_providers")
     def test_multiple_providers(self, mock_build_providers, mock_mcp_instance):
         """Test initialization with multiple providers."""
         mock_providers = {
             "stripe": Mock(spec=BasePaymentProvider),
-            "paypal": Mock(spec=BasePaymentProvider)
+            "paypal": Mock(spec=BasePaymentProvider),
         }
         mock_build_providers.return_value = mock_providers
 
         providers_config = {
             "stripe": {"api_key": "sk_test_stripe"},
-            "paypal": {"client_id": "test_id", "client_secret": "test_secret"}
+            "paypal": {"client_id": "test_id", "client_secret": "test_secret"},
         }
 
         paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
@@ -142,7 +139,7 @@ class TestPayMCP:
 
     def test_wrapper_factory_integration(self, mock_mcp_instance, mock_provider):
         """Test integration between wrapper factory and provider."""
-        with patch('paymcp.core.build_providers') as mock_build:
+        with patch("paymcp.core.build_providers") as mock_build:
             mock_build.return_value = {"test": mock_provider}
 
             paymcp = PayMCP(mock_mcp_instance, providers={"test": {}})
@@ -152,5 +149,5 @@ class TestPayMCP:
             func._paymcp_price_info = {"amount": 25.0, "currency": "EUR"}
 
             # Verify wrapper factory exists
-            assert hasattr(paymcp, '_wrapper_factory')
+            assert hasattr(paymcp, "_wrapper_factory")
             assert paymcp._wrapper_factory is not None

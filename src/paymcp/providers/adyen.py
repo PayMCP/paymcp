@@ -32,7 +32,9 @@ class AdyenProvider(BasePaymentProvider):
 
     def create_payment(self, amount: float, currency: str, description: str):
         """Creates Adyen Pay-by-Link and returns (link_id, payment_url)."""
-        self.logger.debug(f"Creating Adyen payment: {amount} {currency} for '{description}'")
+        self.logger.debug(
+            f"Creating Adyen payment: {amount} {currency} for '{description}'"
+        )
         data = {
             "amount": {
                 "currency": currency.upper(),

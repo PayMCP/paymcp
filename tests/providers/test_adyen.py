@@ -16,7 +16,7 @@ class TestAdyenProvider:
             merchant_account="test_merchant",
             return_url="https://test.com/return",
             sandbox=True,
-            logger=mock_logger
+            logger=mock_logger,
         )
         provider._request = Mock()
         return provider
@@ -26,7 +26,7 @@ class TestAdyenProvider:
             api_key="test_key",
             merchant_account="merchant123",
             logger=mock_logger,
-            sandbox=True
+            sandbox=True,
         )
         assert provider.api_key == "test_key"
         assert provider.merchant_account == "merchant123"
@@ -39,15 +39,13 @@ class TestAdyenProvider:
             api_key="prod_key",
             merchant_account="merchant456",
             logger=mock_logger,
-            sandbox=False
+            sandbox=False,
         )
         assert provider.base_url == "https://checkout-live.adyen.com/v71"
 
     def test_init_with_apiKey_fallback(self, mock_logger):
         provider = AdyenProvider(
-            apiKey="fallback_key",
-            merchant_account="merchant789",
-            logger=mock_logger
+            apiKey="fallback_key", merchant_account="merchant789", logger=mock_logger
         )
         assert provider.api_key == "fallback_key"
 
@@ -56,7 +54,7 @@ class TestAdyenProvider:
             api_key="test_key",
             merchant_account="merchant",
             return_url="https://custom.com/payment-complete",
-            logger=mock_logger
+            logger=mock_logger,
         )
         assert provider.return_url == "https://custom.com/payment-complete"
 
@@ -67,7 +65,7 @@ class TestAdyenProvider:
         headers = adyen_provider._build_headers()
         assert headers == {
             "X-API-Key": "test_api_key",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     def test_create_payment_success(self, adyen_provider, mock_logger):
@@ -75,33 +73,26 @@ class TestAdyenProvider:
             "id": "LINK123ABC",
             "url": "https://checkout-test.adyen.com/v71/payByLink/LINK123ABC",
             "status": "active",
-            "expiresAt": "2024-12-31T23:59:59Z"
+            "expiresAt": "2024-12-31T23:59:59Z",
         }
         adyen_provider._request.return_value = mock_response
 
         link_id, payment_url = adyen_provider.create_payment(
-            amount=75.50,
-            currency="USD",
-            description="Test Payment"
+            amount=75.50, currency="USD", description="Test Payment"
         )
 
         assert link_id == "LINK123ABC"
         assert payment_url == "https://checkout-test.adyen.com/v71/payByLink/LINK123ABC"
 
         expected_data = {
-            "amount": {
-                "currency": "USD",
-                "value": 7550
-            },
+            "amount": {"currency": "USD", "value": 7550},
             "reference": "Test Payment",
             "merchantAccount": "test_merchant",
-            "returnUrl": "https://test.com/return"
+            "returnUrl": "https://test.com/return",
         }
 
         adyen_provider._request.assert_called_once_with(
-            "POST",
-            "https://checkout-test.adyen.com/v71/paymentLinks",
-            expected_data
+            "POST", "https://checkout-test.adyen.com/v71/paymentLinks", expected_data
         )
         mock_logger.debug.assert_called_with(
             "Creating Adyen payment: 75.5 USD for 'Test Payment'"
@@ -154,7 +145,7 @@ class TestAdyenProvider:
         mock_response = {
             "id": "LINK123",
             "status": "completed",
-            "amount": {"currency": "USD", "value": 5000}
+            "amount": {"currency": "USD", "value": 5000},
         }
         adyen_provider._request.return_value = mock_response
 
@@ -162,57 +153,42 @@ class TestAdyenProvider:
 
         assert status == "paid"
         adyen_provider._request.assert_called_once_with(
-            "GET",
-            "https://checkout-test.adyen.com/v71/paymentLinks/LINK123"
+            "GET", "https://checkout-test.adyen.com/v71/paymentLinks/LINK123"
         )
         mock_logger.debug.assert_called_with(
             "Checking Adyen payment status for: %s", "LINK123"
         )
 
     def test_get_payment_status_active(self, adyen_provider):
-        mock_response = {
-            "id": "LINK456",
-            "status": "active"
-        }
+        mock_response = {"id": "LINK456", "status": "active"}
         adyen_provider._request.return_value = mock_response
 
         status = adyen_provider.get_payment_status("LINK456")
         assert status == "pending"
 
     def test_get_payment_status_expired(self, adyen_provider):
-        mock_response = {
-            "id": "LINK789",
-            "status": "expired"
-        }
+        mock_response = {"id": "LINK789", "status": "expired"}
         adyen_provider._request.return_value = mock_response
 
         status = adyen_provider.get_payment_status("LINK789")
         assert status == "failed"
 
     def test_get_payment_status_other(self, adyen_provider):
-        mock_response = {
-            "id": "LINK999",
-            "status": "paymentPending"
-        }
+        mock_response = {"id": "LINK999", "status": "paymentPending"}
         adyen_provider._request.return_value = mock_response
 
         status = adyen_provider.get_payment_status("LINK999")
         assert status == "paymentPending"
 
     def test_get_payment_status_missing_status(self, adyen_provider):
-        mock_response = {
-            "id": "LINK_NO_STATUS"
-        }
+        mock_response = {"id": "LINK_NO_STATUS"}
         adyen_provider._request.return_value = mock_response
 
         status = adyen_provider.get_payment_status("LINK_NO_STATUS")
         assert status == "unknown"
 
     def test_get_payment_status_none_status(self, adyen_provider):
-        mock_response = {
-            "id": "LINK_NONE",
-            "status": None
-        }
+        mock_response = {"id": "LINK_NONE", "status": None}
         adyen_provider._request.return_value = mock_response
 
         status = adyen_provider.get_payment_status("LINK_NONE")

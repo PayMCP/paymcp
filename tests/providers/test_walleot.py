@@ -11,10 +11,7 @@ class TestWalleotProvider:
 
     @pytest.fixture
     def walleot_provider(self, mock_logger):
-        provider = WalleotProvider(
-            api_key="test_api_key",
-            logger=mock_logger
-        )
+        provider = WalleotProvider(api_key="test_api_key", logger=mock_logger)
         provider._request = Mock()
         return provider
 
@@ -40,7 +37,7 @@ class TestWalleotProvider:
         headers = walleot_provider._build_headers()
         assert headers == {
             "Authorization": "Bearer test_api_key",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     def test_build_headers_no_api_key(self, mock_logger):
@@ -48,7 +45,7 @@ class TestWalleotProvider:
         headers = provider._build_headers()
         assert headers == {
             "Authorization": "Bearer None",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     def test_create_payment_success(self, walleot_provider, mock_logger):
@@ -57,14 +54,12 @@ class TestWalleotProvider:
             "url": "https://pay.walleot.com/session/SESSION123",
             "status": "pending",
             "amount": 10000,
-            "currency": "usd"
+            "currency": "usd",
         }
         walleot_provider._request.return_value = mock_response
 
         session_id, session_url = walleot_provider.create_payment(
-            amount=100.00,
-            currency="USD",
-            description="Test Payment"
+            amount=100.00, currency="USD", description="Test Payment"
         )
 
         assert session_id == "SESSION123"
@@ -73,13 +68,11 @@ class TestWalleotProvider:
         expected_data = {
             "amount": 10000,
             "currency": "usd",
-            "description": "Test Payment"
+            "description": "Test Payment",
         }
 
         walleot_provider._request.assert_called_once_with(
-            "POST",
-            f"{BASE_URL}/sessions",
-            expected_data
+            "POST", f"{BASE_URL}/sessions", expected_data
         )
         mock_logger.debug.assert_called_with(
             "Creating Walleot payment session: 100.0 USD for 'Test Payment'"
@@ -88,7 +81,7 @@ class TestWalleotProvider:
     def test_create_payment_different_currencies(self, walleot_provider):
         mock_response = {
             "sessionId": "SESSION456",
-            "url": "https://pay.walleot.com/session/SESSION456"
+            "url": "https://pay.walleot.com/session/SESSION456",
         }
         walleot_provider._request.return_value = mock_response
 
@@ -101,7 +94,7 @@ class TestWalleotProvider:
     def test_create_payment_zero_amount(self, walleot_provider):
         mock_response = {
             "sessionId": "SESSION789",
-            "url": "https://pay.walleot.com/session/SESSION789"
+            "url": "https://pay.walleot.com/session/SESSION789",
         }
         walleot_provider._request.return_value = mock_response
 
@@ -113,7 +106,7 @@ class TestWalleotProvider:
     def test_create_payment_fractional_cents(self, walleot_provider):
         mock_response = {
             "sessionId": "SESSION999",
-            "url": "https://pay.walleot.com/session/SESSION999"
+            "url": "https://pay.walleot.com/session/SESSION999",
         }
         walleot_provider._request.return_value = mock_response
 
@@ -125,7 +118,7 @@ class TestWalleotProvider:
     def test_create_payment_large_amount(self, walleot_provider):
         mock_response = {
             "sessionId": "SESSION_BIG",
-            "url": "https://pay.walleot.com/session/SESSION_BIG"
+            "url": "https://pay.walleot.com/session/SESSION_BIG",
         }
         walleot_provider._request.return_value = mock_response
 
@@ -137,7 +130,7 @@ class TestWalleotProvider:
     def test_create_payment_uppercase_currency(self, walleot_provider):
         mock_response = {
             "sessionId": "SESSION_UP",
-            "url": "https://pay.walleot.com/session/SESSION_UP"
+            "url": "https://pay.walleot.com/session/SESSION_UP",
         }
         walleot_provider._request.return_value = mock_response
 
@@ -157,7 +150,7 @@ class TestWalleotProvider:
             "sessionId": "SESSION123",
             "status": "PAID",
             "amount": 10000,
-            "currency": "usd"
+            "currency": "usd",
         }
         walleot_provider._request.return_value = mock_response
 
@@ -165,38 +158,28 @@ class TestWalleotProvider:
 
         assert status == "paid"
         walleot_provider._request.assert_called_once_with(
-            "GET",
-            f"{BASE_URL}/sessions/SESSION123"
+            "GET", f"{BASE_URL}/sessions/SESSION123"
         )
         mock_logger.debug.assert_called_with(
             "Checking walleot payment status for: %s", "SESSION123"
         )
 
     def test_get_payment_status_pending(self, walleot_provider):
-        mock_response = {
-            "sessionId": "SESSION456",
-            "status": "PENDING"
-        }
+        mock_response = {"sessionId": "SESSION456", "status": "PENDING"}
         walleot_provider._request.return_value = mock_response
 
         status = walleot_provider.get_payment_status("SESSION456")
         assert status == "pending"
 
     def test_get_payment_status_cancelled(self, walleot_provider):
-        mock_response = {
-            "sessionId": "SESSION789",
-            "status": "CANCELLED"
-        }
+        mock_response = {"sessionId": "SESSION789", "status": "CANCELLED"}
         walleot_provider._request.return_value = mock_response
 
         status = walleot_provider.get_payment_status("SESSION789")
         assert status == "cancelled"
 
     def test_get_payment_status_mixed_case(self, walleot_provider):
-        mock_response = {
-            "sessionId": "SESSION999",
-            "status": "Completed"
-        }
+        mock_response = {"sessionId": "SESSION999", "status": "Completed"}
         walleot_provider._request.return_value = mock_response
 
         status = walleot_provider.get_payment_status("SESSION999")

@@ -1,4 +1,5 @@
 import logging
+
 logger = logging.getLogger(__name__)
 from importlib.util import find_spec
 import threading
@@ -6,8 +7,9 @@ import multiprocessing
 import sys
 import webbrowser
 
+
 def _open_payment_webview(url: str):
-    """Open the payment URL in an embedded pywebview window, 
+    """Open the payment URL in an embedded pywebview window,
 
     Note: On macOS, GUI frameworks must run on the main thread of a process.
     This function is safe to run as the target of a dedicated process or a
@@ -50,7 +52,9 @@ def open_payment_webview_if_available(url: str) -> bool:
                 logger.info("[initiate] Opened pywebview thread for payment url")
             return True
         except Exception:
-            logger.exception("[initiate] Failed to launch pywebview; falling back to browser")
+            logger.exception(
+                "[initiate] Failed to launch pywebview; falling back to browser"
+            )
             try:
                 webbrowser.open(url)
                 logger.info("[initiate] Opened default browser for payment url")

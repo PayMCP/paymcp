@@ -1,4 +1,5 @@
 """Tests for session manager."""
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -24,21 +25,21 @@ class TestSessionManager:
 
     def test_get_storage_with_config(self):
         """Test get_storage with explicit config."""
-        config = SessionStorageConfig(type='memory')
+        config = SessionStorageConfig(type="memory")
         storage = SessionManager.get_storage(config)
 
         assert isinstance(storage, InMemorySessionStorage)
 
     def test_create_memory_storage(self):
         """Test creating memory storage."""
-        config = SessionStorageConfig(type='memory')
+        config = SessionStorageConfig(type="memory")
         storage = SessionManager.create_storage(config)
 
         assert isinstance(storage, InMemorySessionStorage)
 
     def test_create_redis_storage_not_implemented(self):
         """Test that Redis storage raises NotImplementedError."""
-        config = SessionStorageConfig(type='redis')
+        config = SessionStorageConfig(type="redis")
 
         with pytest.raises(NotImplementedError) as exc:
             SessionManager.create_storage(config)
@@ -49,8 +50,7 @@ class TestSessionManager:
         """Test creating custom storage implementation."""
         mock_storage = MagicMock(spec=ISessionStorage)
         config = SessionStorageConfig(
-            type='custom',
-            options={'implementation': mock_storage}
+            type="custom", options={"implementation": mock_storage}
         )
 
         storage = SessionManager.create_storage(config)
@@ -59,7 +59,7 @@ class TestSessionManager:
 
     def test_create_custom_storage_missing_implementation(self):
         """Test custom storage without implementation raises error."""
-        config = SessionStorageConfig(type='custom', options={})
+        config = SessionStorageConfig(type="custom", options={})
 
         with pytest.raises(ValueError) as exc:
             SessionManager.create_storage(config)
@@ -68,7 +68,7 @@ class TestSessionManager:
 
     def test_create_custom_storage_no_options(self):
         """Test custom storage without options raises error."""
-        config = SessionStorageConfig(type='custom')
+        config = SessionStorageConfig(type="custom")
 
         with pytest.raises(ValueError) as exc:
             SessionManager.create_storage(config)
@@ -77,7 +77,7 @@ class TestSessionManager:
 
     def test_create_unknown_storage_type(self):
         """Test unknown storage type raises error."""
-        config = SessionStorageConfig(type='unknown')  # type: ignore
+        config = SessionStorageConfig(type="unknown")  # type: ignore
 
         with pytest.raises(ValueError) as exc:
             SessionManager.create_storage(config)
@@ -95,10 +95,10 @@ class TestSessionManager:
     def test_reset_with_destroyable_instance(self):
         """Test reset calls destroy on existing instance."""
         storage = SessionManager.get_storage()
-        assert hasattr(storage, 'destroy')
+        assert hasattr(storage, "destroy")
 
         # Mock the destroy method
-        with patch.object(storage, 'destroy') as mock_destroy:
+        with patch.object(storage, "destroy") as mock_destroy:
             SessionManager.reset()
             mock_destroy.assert_called_once()
 
@@ -116,7 +116,7 @@ class TestSessionManager:
     def test_get_storage_preserves_singleton_with_config(self):
         """Test that providing config to existing singleton doesn't recreate."""
         storage1 = SessionManager.get_storage()
-        config = SessionStorageConfig(type='memory')
+        config = SessionStorageConfig(type="memory")
         storage2 = SessionManager.get_storage(config)
 
         # Should still be the same instance
@@ -134,16 +134,15 @@ class TestSessionManager:
         mock_storage.cleanup = MagicMock()
 
         config = SessionStorageConfig(
-            type='custom',
-            options={'implementation': mock_storage}
+            type="custom", options={"implementation": mock_storage}
         )
 
         storage = SessionManager.create_storage(config)
 
         # Verify it has all required methods
-        assert hasattr(storage, 'set')
-        assert hasattr(storage, 'get')
-        assert hasattr(storage, 'delete')
-        assert hasattr(storage, 'has')
-        assert hasattr(storage, 'clear')
-        assert hasattr(storage, 'cleanup')
+        assert hasattr(storage, "set")
+        assert hasattr(storage, "get")
+        assert hasattr(storage, "delete")
+        assert hasattr(storage, "has")
+        assert hasattr(storage, "clear")
+        assert hasattr(storage, "cleanup")

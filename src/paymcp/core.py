@@ -6,6 +6,7 @@ from .payment.flows import make_flow
 from .payment.payment_flow import PaymentFlow
 from importlib.metadata import version, PackageNotFoundError
 import logging
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -13,8 +14,14 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
+
 class PayMCP:
-    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP):
+    def __init__(
+        self,
+        mcp_instance,
+        providers=None,
+        payment_flow: PaymentFlow = PaymentFlow.TWO_STEP,
+    ):
         logger.debug(f"PayMCP v{__version__}")
         flow_name = payment_flow.value
         self._wrapper_factory = make_flow(flow_name)
@@ -24,6 +31,7 @@ class PayMCP:
 
     def _patch_tool(self):
         original_tool = self.mcp.tool
+
         def patched_tool(*args, **kwargs):
             def wrapper(func):
                 # Read @price decorator
@@ -31,14 +39,16 @@ class PayMCP:
 
                 if price_info:
                     # --- Create payment using provider ---
-                    provider = next(iter(self.providers.values())) #get first one - TODO allow to choose
+                    provider = next(
+                        iter(self.providers.values())
+                    )  # get first one - TODO allow to choose
                     if provider is None:
-                        raise RuntimeError(
-                            f"No payment provider configured"
-                        )
+                        raise RuntimeError(f"No payment provider configured")
 
                     # Deferred payment creation, so do not call provider.create_payment here
-                    kwargs["description"] = description_with_price(kwargs.get("description") or func.__doc__ or "", price_info)
+                    kwargs["description"] = description_with_price(
+                        kwargs.get("description") or func.__doc__ or "", price_info
+                    )
                     target_func = self._wrapper_factory(
                         func, self.mcp, provider, price_info
                     )
@@ -46,6 +56,7 @@ class PayMCP:
                     target_func = func
 
                 return original_tool(*args, **kwargs)(target_func)
+
             return wrapper
 
         self.mcp.tool = patched_tool

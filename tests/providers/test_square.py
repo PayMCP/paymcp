@@ -19,21 +19,18 @@ class TestSquareProvider:
             logger=mock_logger,
             redirect_url="https://test.com/success",
             sandbox=True,
-            api_version="2025-03-19"
+            api_version="2025-03-19",
         )
         return provider
 
     def test_init_sandbox_mode(self, mock_logger):
         provider = SquareProvider(
-            access_token="token",
-            location_id="loc123",
-            logger=mock_logger,
-            sandbox=True
+            access_token="token", location_id="loc123", logger=mock_logger, sandbox=True
         )
         assert provider.base_url == SANDBOX_URL
         assert provider.access_token == "token"
         assert provider.location_id == "loc123"
-        assert provider.redirect_url == 'https://example.com/success'
+        assert provider.redirect_url == "https://example.com/success"
         mock_logger.debug.assert_called_with("Square ready (API version: 2025-03-19)")
 
     def test_init_production_mode(self, mock_logger):
@@ -41,7 +38,7 @@ class TestSquareProvider:
             access_token="token",
             location_id="loc123",
             logger=mock_logger,
-            sandbox=False
+            sandbox=False,
         )
         assert provider.base_url == PRODUCTION_URL
 
@@ -50,7 +47,7 @@ class TestSquareProvider:
             access_token="token",
             location_id="loc123",
             logger=mock_logger,
-            redirect_url="https://custom.com/payment-success"
+            redirect_url="https://custom.com/payment-success",
         )
         assert provider.redirect_url == "https://custom.com/payment-success"
 
@@ -59,17 +56,15 @@ class TestSquareProvider:
             access_token="token",
             location_id="loc123",
             logger=mock_logger,
-            api_version="2025-01-01"
+            api_version="2025-01-01",
         )
         assert provider.api_version == "2025-01-01"
         mock_logger.debug.assert_called_with("Square ready (API version: 2025-01-01)")
 
-    @patch.dict(os.environ, {'SQUARE_API_VERSION': '2024-12-01'})
+    @patch.dict(os.environ, {"SQUARE_API_VERSION": "2024-12-01"})
     def test_init_api_version_from_env(self, mock_logger):
         provider = SquareProvider(
-            access_token="token",
-            location_id="loc123",
-            logger=mock_logger
+            access_token="token", location_id="loc123", logger=mock_logger
         )
         assert provider.api_version == "2024-12-01"
 
@@ -81,7 +76,7 @@ class TestSquareProvider:
         assert headers == {
             "Authorization": "Bearer test_access_token",
             "Content-Type": "application/json",
-            "Square-Version": "2025-03-19"
+            "Square-Version": "2025-03-19",
         }
 
     def test_generate_idempotency_key(self, square_provider):
@@ -95,23 +90,21 @@ class TestSquareProvider:
         assert parts[0].isdigit()
         assert len(parts[1]) == 8
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_success(self, mock_post, square_provider, mock_logger):
         mock_resp = Mock()
         mock_resp.json.return_value = {
             "payment_link": {
                 "id": "LINK123",
                 "url": "https://square.link/u/LINK123",
-                "created_at": "2024-01-01T00:00:00Z"
+                "created_at": "2024-01-01T00:00:00Z",
             }
         }
         mock_resp.raise_for_status = Mock()
         mock_post.return_value = mock_resp
 
         payment_id, payment_url = square_provider.create_payment(
-            amount=49.99,
-            currency="USD",
-            description="Test Product"
+            amount=49.99, currency="USD", description="Test Product"
         )
 
         assert payment_id == "LINK123"
@@ -121,7 +114,7 @@ class TestSquareProvider:
         call_args = mock_post.call_args
         assert call_args[0][0] == f"{SANDBOX_URL}/v2/online-checkout/payment-links"
 
-        payload = call_args.kwargs['json']
+        payload = call_args.kwargs["json"]
         assert "idempotency_key" in payload
         assert payload["quick_pay"]["name"] == "Test Product"
         assert payload["quick_pay"]["price_money"]["amount"] == 4999
@@ -132,7 +125,7 @@ class TestSquareProvider:
             "Creating Square payment: 49.99 USD for 'Test Product'"
         )
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_different_currencies(self, mock_post, square_provider):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -143,11 +136,11 @@ class TestSquareProvider:
 
         square_provider.create_payment(25.00, "eur", "Euro Product")
 
-        payload = mock_post.call_args.kwargs['json']
+        payload = mock_post.call_args.kwargs["json"]
         assert payload["quick_pay"]["price_money"]["currency"] == "EUR"
         assert payload["quick_pay"]["price_money"]["amount"] == 2500
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_zero_amount(self, mock_post, square_provider):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -158,10 +151,10 @@ class TestSquareProvider:
 
         square_provider.create_payment(0, "USD", "Free Item")
 
-        payload = mock_post.call_args.kwargs['json']
+        payload = mock_post.call_args.kwargs["json"]
         assert payload["quick_pay"]["price_money"]["amount"] == 0
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_fractional_cents(self, mock_post, square_provider):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -172,30 +165,36 @@ class TestSquareProvider:
 
         square_provider.create_payment(10.999, "USD", "Fractional")
 
-        payload = mock_post.call_args.kwargs['json']
+        payload = mock_post.call_args.kwargs["json"]
         assert payload["quick_pay"]["price_money"]["amount"] == 1099
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_missing_id(self, mock_post, square_provider):
         mock_resp = Mock()
-        mock_resp.json.return_value = {"payment_link": {"url": "https://square.link/u/TEST"}}
+        mock_resp.json.return_value = {
+            "payment_link": {"url": "https://square.link/u/TEST"}
+        }
         mock_resp.raise_for_status = Mock()
         mock_post.return_value = mock_resp
 
-        with pytest.raises(ValueError, match="Invalid response from Square Payment Links API"):
+        with pytest.raises(
+            ValueError, match="Invalid response from Square Payment Links API"
+        ):
             square_provider.create_payment(50.00, "USD", "Test")
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_missing_url(self, mock_post, square_provider):
         mock_resp = Mock()
         mock_resp.json.return_value = {"payment_link": {"id": "LINK123"}}
         mock_resp.raise_for_status = Mock()
         mock_post.return_value = mock_resp
 
-        with pytest.raises(ValueError, match="Invalid response from Square Payment Links API"):
+        with pytest.raises(
+            ValueError, match="Invalid response from Square Payment Links API"
+        ):
             square_provider.create_payment(50.00, "USD", "Test")
 
-    @patch('src.paymcp.providers.square.requests.post')
+    @patch("src.paymcp.providers.square.requests.post")
     def test_create_payment_http_error(self, mock_post, square_provider):
         mock_resp = Mock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("401 Unauthorized")
@@ -204,8 +203,10 @@ class TestSquareProvider:
         with pytest.raises(requests.HTTPError):
             square_provider.create_payment(100.00, "USD", "Test")
 
-    @patch('src.paymcp.providers.square.requests.get')
-    def test_get_payment_status_paid_net_zero(self, mock_get, square_provider, mock_logger):
+    @patch("src.paymcp.providers.square.requests.get")
+    def test_get_payment_status_paid_net_zero(
+        self, mock_get, square_provider, mock_logger
+    ):
         # Mock payment link response
         payment_link_resp = Mock()
         payment_link_resp.json.return_value = {
@@ -218,7 +219,7 @@ class TestSquareProvider:
         order_resp.json.return_value = {
             "order": {
                 "state": "OPEN",
-                "net_amount_due_money": {"amount": 0, "currency": "USD"}
+                "net_amount_due_money": {"amount": 0, "currency": "USD"},
             }
         }
         order_resp.raise_for_status = Mock()
@@ -229,9 +230,11 @@ class TestSquareProvider:
 
         assert status == "paid"
         assert mock_get.call_count == 2
-        mock_logger.debug.assert_called_with("Checking Square payment status for: LINK123")
+        mock_logger.debug.assert_called_with(
+            "Checking Square payment status for: LINK123"
+        )
 
-    @patch('src.paymcp.providers.square.requests.get')
+    @patch("src.paymcp.providers.square.requests.get")
     def test_get_payment_status_completed(self, mock_get, square_provider):
         payment_link_resp = Mock()
         payment_link_resp.json.return_value = {
@@ -243,7 +246,7 @@ class TestSquareProvider:
         order_resp.json.return_value = {
             "order": {
                 "state": "COMPLETED",
-                "net_amount_due_money": {"amount": 100, "currency": "USD"}
+                "net_amount_due_money": {"amount": 100, "currency": "USD"},
             }
         }
         order_resp.raise_for_status = Mock()
@@ -253,7 +256,7 @@ class TestSquareProvider:
         status = square_provider.get_payment_status("LINK456")
         assert status == "paid"
 
-    @patch('src.paymcp.providers.square.requests.get')
+    @patch("src.paymcp.providers.square.requests.get")
     def test_get_payment_status_canceled(self, mock_get, square_provider):
         payment_link_resp = Mock()
         payment_link_resp.json.return_value = {
@@ -265,7 +268,7 @@ class TestSquareProvider:
         order_resp.json.return_value = {
             "order": {
                 "state": "CANCELED",
-                "net_amount_due_money": {"amount": 5000, "currency": "USD"}
+                "net_amount_due_money": {"amount": 5000, "currency": "USD"},
             }
         }
         order_resp.raise_for_status = Mock()
@@ -275,7 +278,7 @@ class TestSquareProvider:
         status = square_provider.get_payment_status("LINK789")
         assert status == "canceled"
 
-    @patch('src.paymcp.providers.square.requests.get')
+    @patch("src.paymcp.providers.square.requests.get")
     def test_get_payment_status_pending(self, mock_get, square_provider):
         payment_link_resp = Mock()
         payment_link_resp.json.return_value = {
@@ -287,7 +290,7 @@ class TestSquareProvider:
         order_resp.json.return_value = {
             "order": {
                 "state": "OPEN",
-                "net_amount_due_money": {"amount": 2500, "currency": "USD"}
+                "net_amount_due_money": {"amount": 2500, "currency": "USD"},
             }
         }
         order_resp.raise_for_status = Mock()
@@ -297,12 +300,10 @@ class TestSquareProvider:
         status = square_provider.get_payment_status("LINK999")
         assert status == "pending"
 
-    @patch('src.paymcp.providers.square.requests.get')
+    @patch("src.paymcp.providers.square.requests.get")
     def test_get_payment_status_no_order_id(self, mock_get, square_provider):
         payment_link_resp = Mock()
-        payment_link_resp.json.return_value = {
-            "payment_link": {"id": "LINK_NO_ORDER"}
-        }
+        payment_link_resp.json.return_value = {"payment_link": {"id": "LINK_NO_ORDER"}}
         payment_link_resp.raise_for_status = Mock()
 
         mock_get.return_value = payment_link_resp
@@ -311,7 +312,7 @@ class TestSquareProvider:
         assert status == "pending"
         assert mock_get.call_count == 1
 
-    @patch('src.paymcp.providers.square.requests.get')
+    @patch("src.paymcp.providers.square.requests.get")
     def test_get_payment_status_exception(self, mock_get, square_provider, mock_logger):
         mock_get.side_effect = requests.HTTPError("404 Not Found")
 
@@ -322,8 +323,10 @@ class TestSquareProvider:
         error_msg = mock_logger.error.call_args[0][0]
         assert "Error checking Square payment status" in error_msg
 
-    @patch('src.paymcp.providers.square.requests.get')
-    def test_get_payment_status_order_request_failure(self, mock_get, square_provider, mock_logger):
+    @patch("src.paymcp.providers.square.requests.get")
+    def test_get_payment_status_order_request_failure(
+        self, mock_get, square_provider, mock_logger
+    ):
         payment_link_resp = Mock()
         payment_link_resp.json.return_value = {
             "payment_link": {"id": "LINK_ERR", "order_id": "ORDER_ERR"}

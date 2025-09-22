@@ -40,7 +40,7 @@ class MockProvider(BasePaymentProvider):
             "status": "pending",
             "amount": amount,
             "currency": currency,
-            "created_at": asyncio.get_event_loop().time()
+            "created_at": asyncio.get_event_loop().time(),
         }
         return payment_id, payment_url
 
@@ -75,6 +75,7 @@ def mock_mcp():
             tool_name = name if name else f.__name__
             registered_tools[tool_name] = f
             return f
+
         # Handle both @mcp.tool() and @mcp.tool cases
         if callable(name):
             # Direct decoration without parentheses
@@ -110,35 +111,47 @@ class TestSessionPersistenceAllFlows:
     """Test session persistence across all payment flows"""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("flow", [
-        PaymentFlow.TWO_STEP,
-        PaymentFlow.ELICITATION,
-        PaymentFlow.PROGRESS
-    ])
-    async def test_session_storage_on_timeout(self, flow, mock_mcp, mock_func, mock_ctx):
+    @pytest.mark.parametrize(
+        "flow", [PaymentFlow.TWO_STEP, PaymentFlow.ELICITATION, PaymentFlow.PROGRESS]
+    )
+    async def test_session_storage_on_timeout(
+        self, flow, mock_mcp, mock_func, mock_ctx
+    ):
         """Test that session is properly stored when payment times out"""
         provider = MockProvider(name="test_provider")
 
         # Get the appropriate wrapper based on flow
         if flow == PaymentFlow.TWO_STEP:
-            wrapper = two_step.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = two_step.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
             # For TWO_STEP, the wrapper IS the initiate tool
             result = await wrapper()
             payment_id = result["payment_id"]
 
         elif flow == PaymentFlow.ELICITATION:
-            with patch('paymcp.payment.flows.elicitation.run_elicitation_loop') as mock_elicitation:
+            with patch(
+                "paymcp.payment.flows.elicitation.run_elicitation_loop"
+            ) as mock_elicitation:
                 mock_elicitation.return_value = "timeout"
-                wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = elicitation.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
                 result = await wrapper("arg1", "arg2", ctx=mock_ctx, key="value")
                 payment_id = result["payment_id"]
 
         elif flow == PaymentFlow.PROGRESS:
-            with patch('asyncio.sleep', new_callable=AsyncMock):
-                with patch('paymcp.payment.flows.progress.MAX_WAIT_SECONDS', 0.1):
-                    with patch('paymcp.payment.flows.progress.DEFAULT_POLL_SECONDS', 0.01):
-                        wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
-                        result = await wrapper("arg1", "arg2", ctx=mock_ctx, key="value")
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                with patch("paymcp.payment.flows.progress.MAX_WAIT_SECONDS", 0.1):
+                    with patch(
+                        "paymcp.payment.flows.progress.DEFAULT_POLL_SECONDS", 0.01
+                    ):
+                        wrapper = progress.make_paid_wrapper(
+                            mock_func, mock_mcp, provider, PRICE_INFO
+                        )
+                        result = await wrapper(
+                            "arg1", "arg2", ctx=mock_ctx, key="value"
+                        )
                         payment_id = result["payment_id"]
 
         # Verify response contains pending status and confirmation tool
@@ -151,42 +164,59 @@ class TestSessionPersistenceAllFlows:
             assert result["next_step"] == f"confirm_{mock_func.__name__}_payment"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("flow", [
-        PaymentFlow.TWO_STEP,
-        PaymentFlow.ELICITATION,
-        PaymentFlow.PROGRESS
-    ])
-    async def test_confirmation_tool_with_session(self, flow, mock_mcp, mock_func, mock_ctx):
+    @pytest.mark.parametrize(
+        "flow", [PaymentFlow.TWO_STEP, PaymentFlow.ELICITATION, PaymentFlow.PROGRESS]
+    )
+    async def test_confirmation_tool_with_session(
+        self, flow, mock_mcp, mock_func, mock_ctx
+    ):
         """Test that confirmation tool correctly retrieves and uses stored session"""
         provider = MockProvider(name="test_provider")
 
         # Get wrapper and confirmation tool
         if flow == PaymentFlow.TWO_STEP:
-            wrapper = two_step.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = two_step.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
         elif flow == PaymentFlow.ELICITATION:
-            wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = elicitation.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
         elif flow == PaymentFlow.PROGRESS:
-            wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = progress.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
 
-        confirm_tool = mock_mcp.registered_tools.get(f"confirm_{mock_func.__name__}_payment")
+        confirm_tool = mock_mcp.registered_tools.get(
+            f"confirm_{mock_func.__name__}_payment"
+        )
         assert confirm_tool is not None
 
         # Create payment and mark as paid
         payment_id = f"{provider.name}_{PAYMENT_ID}"
-        provider.payments[payment_id] = {"status": "paid", "amount": 0.05, "currency": "USD"}
+        provider.payments[payment_id] = {
+            "status": "paid",
+            "amount": 0.05,
+            "currency": "USD",
+        }
 
         # Mock session storage
         module_name = {
-            PaymentFlow.TWO_STEP: 'paymcp.payment.flows.two_step',
-            PaymentFlow.ELICITATION: 'paymcp.payment.flows.elicitation',
-            PaymentFlow.PROGRESS: 'paymcp.payment.flows.progress'
+            PaymentFlow.TWO_STEP: "paymcp.payment.flows.two_step",
+            PaymentFlow.ELICITATION: "paymcp.payment.flows.elicitation",
+            PaymentFlow.PROGRESS: "paymcp.payment.flows.progress",
         }[flow]
 
-        with patch(f'{module_name}.session_storage') as mock_storage:
-            mock_storage.get = AsyncMock(return_value=SessionData(
-                args={'args': ("arg1", "arg2"), 'kwargs': {"key": "value", "ctx": mock_ctx}},
-                ts=int(time.time() * 1000)
-            ))
+        with patch(f"{module_name}.session_storage") as mock_storage:
+            mock_storage.get = AsyncMock(
+                return_value=SessionData(
+                    args={
+                        "args": ("arg1", "arg2"),
+                        "kwargs": {"key": "value", "ctx": mock_ctx},
+                    },
+                    ts=int(time.time() * 1000),
+                )
+            )
             mock_storage.delete = AsyncMock()
 
             # Call confirmation tool
@@ -203,31 +233,38 @@ class TestSessionPersistenceAllFlows:
             assert session_key.payment_id == payment_id
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("flow", [
-        PaymentFlow.ELICITATION,
-        PaymentFlow.PROGRESS
-    ])
-    async def test_session_cleanup_on_success(self, flow, mock_mcp, mock_func, mock_ctx):
+    @pytest.mark.parametrize("flow", [PaymentFlow.ELICITATION, PaymentFlow.PROGRESS])
+    async def test_session_cleanup_on_success(
+        self, flow, mock_mcp, mock_func, mock_ctx
+    ):
         """Test that session is cleaned up after successful payment"""
         provider = MockProvider(name="test_provider")
 
         # Pre-create a paid payment
         payment_id = f"{provider.name}_{PAYMENT_ID}"
-        provider.payments[payment_id] = {"status": "paid", "amount": 0.05, "currency": "USD"}
+        provider.payments[payment_id] = {
+            "status": "paid",
+            "amount": 0.05,
+            "currency": "USD",
+        }
 
         module_name = {
-            PaymentFlow.ELICITATION: 'paymcp.payment.flows.elicitation',
-            PaymentFlow.PROGRESS: 'paymcp.payment.flows.progress'
+            PaymentFlow.ELICITATION: "paymcp.payment.flows.elicitation",
+            PaymentFlow.PROGRESS: "paymcp.payment.flows.progress",
         }[flow]
 
-        with patch(f'{module_name}.session_storage') as mock_storage:
+        with patch(f"{module_name}.session_storage") as mock_storage:
             mock_storage.set = AsyncMock()
             mock_storage.delete = AsyncMock()
 
             if flow == PaymentFlow.ELICITATION:
-                with patch('paymcp.payment.flows.elicitation.run_elicitation_loop') as mock_elicitation:
+                with patch(
+                    "paymcp.payment.flows.elicitation.run_elicitation_loop"
+                ) as mock_elicitation:
                     mock_elicitation.return_value = "paid"
-                    wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                    wrapper = elicitation.make_paid_wrapper(
+                        mock_func, mock_mcp, provider, PRICE_INFO
+                    )
 
                     # Mock provider to return paid immediately
                     provider.get_payment_status = Mock(return_value="paid")
@@ -240,8 +277,10 @@ class TestSessionPersistenceAllFlows:
                     mock_storage.delete.assert_called_once()
 
             elif flow == PaymentFlow.PROGRESS:
-                with patch('asyncio.sleep', new_callable=AsyncMock):
-                    wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                with patch("asyncio.sleep", new_callable=AsyncMock):
+                    wrapper = progress.make_paid_wrapper(
+                        mock_func, mock_mcp, provider, PRICE_INFO
+                    )
 
                     # Mock provider to return paid immediately
                     provider.get_payment_status = Mock(return_value="paid")
@@ -254,27 +293,30 @@ class TestSessionPersistenceAllFlows:
                     mock_storage.delete.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("flow", [
-        PaymentFlow.ELICITATION,
-        PaymentFlow.PROGRESS
-    ])
-    async def test_session_cleanup_on_cancellation(self, flow, mock_mcp, mock_func, mock_ctx):
+    @pytest.mark.parametrize("flow", [PaymentFlow.ELICITATION, PaymentFlow.PROGRESS])
+    async def test_session_cleanup_on_cancellation(
+        self, flow, mock_mcp, mock_func, mock_ctx
+    ):
         """Test that session is cleaned up when payment is canceled"""
         provider = MockProvider(name="test_provider")
 
         module_name = {
-            PaymentFlow.ELICITATION: 'paymcp.payment.flows.elicitation',
-            PaymentFlow.PROGRESS: 'paymcp.payment.flows.progress'
+            PaymentFlow.ELICITATION: "paymcp.payment.flows.elicitation",
+            PaymentFlow.PROGRESS: "paymcp.payment.flows.progress",
         }[flow]
 
-        with patch(f'{module_name}.session_storage') as mock_storage:
+        with patch(f"{module_name}.session_storage") as mock_storage:
             mock_storage.set = AsyncMock()
             mock_storage.delete = AsyncMock()
 
             if flow == PaymentFlow.ELICITATION:
-                with patch('paymcp.payment.flows.elicitation.run_elicitation_loop') as mock_elicitation:
+                with patch(
+                    "paymcp.payment.flows.elicitation.run_elicitation_loop"
+                ) as mock_elicitation:
                     mock_elicitation.return_value = "canceled"
-                    wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                    wrapper = elicitation.make_paid_wrapper(
+                        mock_func, mock_mcp, provider, PRICE_INFO
+                    )
 
                     result = await wrapper("arg1", ctx=mock_ctx)
 
@@ -289,11 +331,15 @@ class TestSessionPersistenceAllFlows:
                     mock_storage.delete.assert_called_once()
 
             elif flow == PaymentFlow.PROGRESS:
-                with patch('asyncio.sleep', new_callable=AsyncMock):
-                    wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                with patch("asyncio.sleep", new_callable=AsyncMock):
+                    wrapper = progress.make_paid_wrapper(
+                        mock_func, mock_mcp, provider, PRICE_INFO
+                    )
 
                     # Mock provider to return canceled after first check
-                    provider.get_payment_status = Mock(side_effect=["pending", "canceled"])
+                    provider.get_payment_status = Mock(
+                        side_effect=["pending", "canceled"]
+                    )
 
                     result = await wrapper("arg1", ctx=mock_ctx)
 
@@ -312,23 +358,35 @@ class TestSessionPersistenceAllFlows:
         provider = MockProvider(name="test_provider")
 
         # Test for each flow
-        for flow in [PaymentFlow.TWO_STEP, PaymentFlow.ELICITATION, PaymentFlow.PROGRESS]:
+        for flow in [
+            PaymentFlow.TWO_STEP,
+            PaymentFlow.ELICITATION,
+            PaymentFlow.PROGRESS,
+        ]:
             if flow == PaymentFlow.TWO_STEP:
-                wrapper = two_step.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = two_step.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
             elif flow == PaymentFlow.ELICITATION:
-                wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = elicitation.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
             elif flow == PaymentFlow.PROGRESS:
-                wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = progress.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
 
-            confirm_tool = mock_mcp.registered_tools.get(f"confirm_{mock_func.__name__}_payment")
+            confirm_tool = mock_mcp.registered_tools.get(
+                f"confirm_{mock_func.__name__}_payment"
+            )
 
             module_name = {
-                PaymentFlow.TWO_STEP: 'paymcp.payment.flows.two_step',
-                PaymentFlow.ELICITATION: 'paymcp.payment.flows.elicitation',
-                PaymentFlow.PROGRESS: 'paymcp.payment.flows.progress'
+                PaymentFlow.TWO_STEP: "paymcp.payment.flows.two_step",
+                PaymentFlow.ELICITATION: "paymcp.payment.flows.elicitation",
+                PaymentFlow.PROGRESS: "paymcp.payment.flows.progress",
             }[flow]
 
-            with patch(f'{module_name}.session_storage') as mock_storage:
+            with patch(f"{module_name}.session_storage") as mock_storage:
                 mock_storage.get = AsyncMock(return_value=None)
 
                 # Should raise error for unknown payment ID
@@ -342,30 +400,47 @@ class TestSessionPersistenceAllFlows:
 
         # Create unpaid payment
         payment_id = f"{provider.name}_{PAYMENT_ID}"
-        provider.payments[payment_id] = {"status": "pending", "amount": 0.05, "currency": "USD"}
+        provider.payments[payment_id] = {
+            "status": "pending",
+            "amount": 0.05,
+            "currency": "USD",
+        }
 
         # Test for each flow
-        for flow in [PaymentFlow.TWO_STEP, PaymentFlow.ELICITATION, PaymentFlow.PROGRESS]:
+        for flow in [
+            PaymentFlow.TWO_STEP,
+            PaymentFlow.ELICITATION,
+            PaymentFlow.PROGRESS,
+        ]:
             if flow == PaymentFlow.TWO_STEP:
-                wrapper = two_step.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = two_step.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
             elif flow == PaymentFlow.ELICITATION:
-                wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = elicitation.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
             elif flow == PaymentFlow.PROGRESS:
-                wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+                wrapper = progress.make_paid_wrapper(
+                    mock_func, mock_mcp, provider, PRICE_INFO
+                )
 
-            confirm_tool = mock_mcp.registered_tools.get(f"confirm_{mock_func.__name__}_payment")
+            confirm_tool = mock_mcp.registered_tools.get(
+                f"confirm_{mock_func.__name__}_payment"
+            )
 
             module_name = {
-                PaymentFlow.TWO_STEP: 'paymcp.payment.flows.two_step',
-                PaymentFlow.ELICITATION: 'paymcp.payment.flows.elicitation',
-                PaymentFlow.PROGRESS: 'paymcp.payment.flows.progress'
+                PaymentFlow.TWO_STEP: "paymcp.payment.flows.two_step",
+                PaymentFlow.ELICITATION: "paymcp.payment.flows.elicitation",
+                PaymentFlow.PROGRESS: "paymcp.payment.flows.progress",
             }[flow]
 
-            with patch(f'{module_name}.session_storage') as mock_storage:
-                mock_storage.get = AsyncMock(return_value=SessionData(
-                    args={'args': (), 'kwargs': {}},
-                    ts=int(time.time() * 1000)
-                ))
+            with patch(f"{module_name}.session_storage") as mock_storage:
+                mock_storage.get = AsyncMock(
+                    return_value=SessionData(
+                        args={"args": (), "kwargs": {}}, ts=int(time.time() * 1000)
+                    )
+                )
 
                 # Should raise error for unpaid payment
                 with pytest.raises(RuntimeError, match="Payment status is pending"):
@@ -376,51 +451,70 @@ class TestProviderIntegration:
     """Test SessionManager with different payment providers"""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("provider_name,flow", [
-        ("stripe", PaymentFlow.TWO_STEP),
-        ("stripe", PaymentFlow.ELICITATION),
-        ("stripe", PaymentFlow.PROGRESS),
-        ("paypal", PaymentFlow.TWO_STEP),
-        ("paypal", PaymentFlow.ELICITATION),
-        ("paypal", PaymentFlow.PROGRESS),
-        ("square", PaymentFlow.TWO_STEP),
-        ("square", PaymentFlow.ELICITATION),
-        ("square", PaymentFlow.PROGRESS),
-        ("walleot", PaymentFlow.TWO_STEP),
-        ("walleot", PaymentFlow.ELICITATION),
-        ("walleot", PaymentFlow.PROGRESS),
-    ])
-    async def test_provider_with_session(self, provider_name, flow, mock_mcp, mock_func, mock_ctx):
+    @pytest.mark.parametrize(
+        "provider_name,flow",
+        [
+            ("stripe", PaymentFlow.TWO_STEP),
+            ("stripe", PaymentFlow.ELICITATION),
+            ("stripe", PaymentFlow.PROGRESS),
+            ("paypal", PaymentFlow.TWO_STEP),
+            ("paypal", PaymentFlow.ELICITATION),
+            ("paypal", PaymentFlow.PROGRESS),
+            ("square", PaymentFlow.TWO_STEP),
+            ("square", PaymentFlow.ELICITATION),
+            ("square", PaymentFlow.PROGRESS),
+            ("walleot", PaymentFlow.TWO_STEP),
+            ("walleot", PaymentFlow.ELICITATION),
+            ("walleot", PaymentFlow.PROGRESS),
+        ],
+    )
+    async def test_provider_with_session(
+        self, provider_name, flow, mock_mcp, mock_func, mock_ctx
+    ):
         """Test SessionManager works with all providers and flows"""
         provider = MockProvider(name=provider_name)
 
         # Get wrapper
         if flow == PaymentFlow.TWO_STEP:
-            wrapper = two_step.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = two_step.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
         elif flow == PaymentFlow.ELICITATION:
-            wrapper = elicitation.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = elicitation.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
         elif flow == PaymentFlow.PROGRESS:
-            wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+            wrapper = progress.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
 
         # Verify confirmation tool is registered
-        confirm_tool = mock_mcp.registered_tools.get(f"confirm_{mock_func.__name__}_payment")
+        confirm_tool = mock_mcp.registered_tools.get(
+            f"confirm_{mock_func.__name__}_payment"
+        )
         assert confirm_tool is not None
 
         # Create and mark payment as paid
         payment_id = f"{provider_name}_{PAYMENT_ID}"
-        provider.payments[payment_id] = {"status": "paid", "amount": 0.05, "currency": "USD"}
+        provider.payments[payment_id] = {
+            "status": "paid",
+            "amount": 0.05,
+            "currency": "USD",
+        }
 
         module_name = {
-            PaymentFlow.TWO_STEP: 'paymcp.payment.flows.two_step',
-            PaymentFlow.ELICITATION: 'paymcp.payment.flows.elicitation',
-            PaymentFlow.PROGRESS: 'paymcp.payment.flows.progress'
+            PaymentFlow.TWO_STEP: "paymcp.payment.flows.two_step",
+            PaymentFlow.ELICITATION: "paymcp.payment.flows.elicitation",
+            PaymentFlow.PROGRESS: "paymcp.payment.flows.progress",
         }[flow]
 
-        with patch(f'{module_name}.session_storage') as mock_storage:
-            mock_storage.get = AsyncMock(return_value=SessionData(
-                args={'args': ("test_arg",), 'kwargs': {"test_key": "test_value"}},
-                ts=int(time.time() * 1000)
-            ))
+        with patch(f"{module_name}.session_storage") as mock_storage:
+            mock_storage.get = AsyncMock(
+                return_value=SessionData(
+                    args={"args": ("test_arg",), "kwargs": {"test_key": "test_value"}},
+                    ts=int(time.time() * 1000),
+                )
+            )
             mock_storage.delete = AsyncMock()
 
             # Confirm payment
@@ -436,15 +530,21 @@ class TestDelayedPayment:
     """Test delayed payment scenarios"""
 
     @pytest.mark.asyncio
-    async def test_delayed_payment_with_confirmation(self, mock_mcp, mock_func, mock_ctx):
+    async def test_delayed_payment_with_confirmation(
+        self, mock_mcp, mock_func, mock_ctx
+    ):
         """Test that delayed payments can be confirmed after timeout"""
-        provider = MockProvider(name="test_provider", payment_delay=10)  # 10 second delay
+        provider = MockProvider(
+            name="test_provider", payment_delay=10
+        )  # 10 second delay
 
         # Test PROGRESS flow with delayed payment
-        with patch('asyncio.sleep', new_callable=AsyncMock):
-            with patch('paymcp.payment.flows.progress.MAX_WAIT_SECONDS', 0.1):
-                with patch('paymcp.payment.flows.progress.DEFAULT_POLL_SECONDS', 0.01):
-                    wrapper = progress.make_paid_wrapper(mock_func, mock_mcp, provider, PRICE_INFO)
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            with patch("paymcp.payment.flows.progress.MAX_WAIT_SECONDS", 0.1):
+                with patch("paymcp.payment.flows.progress.DEFAULT_POLL_SECONDS", 0.01):
+                    wrapper = progress.make_paid_wrapper(
+                        mock_func, mock_mcp, provider, PRICE_INFO
+                    )
 
                     # First call - payment will timeout
                     result = await wrapper("delayed_arg", ctx=mock_ctx)
@@ -452,16 +552,27 @@ class TestDelayedPayment:
                     payment_id = result["payment_id"]
 
                     # Simulate time passing and payment completing
-                    provider.payments[payment_id]["created_at"] -= 20  # Simulate 20 seconds passed
+                    provider.payments[payment_id][
+                        "created_at"
+                    ] -= 20  # Simulate 20 seconds passed
 
                     # Now confirm payment
-                    confirm_tool = mock_mcp.registered_tools.get(f"confirm_{mock_func.__name__}_payment")
+                    confirm_tool = mock_mcp.registered_tools.get(
+                        f"confirm_{mock_func.__name__}_payment"
+                    )
 
-                    with patch('paymcp.payment.flows.progress.session_storage') as mock_storage:
-                        mock_storage.get = AsyncMock(return_value=SessionData(
-                            args={'args': ("delayed_arg",), 'kwargs': {"ctx": mock_ctx}},
-                            ts=int(time.time() * 1000)
-                        ))
+                    with patch(
+                        "paymcp.payment.flows.progress.session_storage"
+                    ) as mock_storage:
+                        mock_storage.get = AsyncMock(
+                            return_value=SessionData(
+                                args={
+                                    "args": ("delayed_arg",),
+                                    "kwargs": {"ctx": mock_ctx},
+                                },
+                                ts=int(time.time() * 1000),
+                            )
+                        )
                         mock_storage.delete = AsyncMock()
 
                         # Payment should now be marked as paid
