@@ -1,16 +1,19 @@
 [run]
-source = paymcp
+source = src
 omit =
     */tests/*
     */test_*.py
     */__pycache__/*
     */venv/*
     */.venv/*
+    */site-packages/*
 
 [paths]
 source =
     src/paymcp
+    */src/paymcp
     paymcp
+    */paymcp
 
 [report]
 exclude_lines =

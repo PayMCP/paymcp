@@ -35,7 +35,7 @@ jobs:
     - name: Generate coverage report
       if: matrix.python-version == '3.12'
       run: |
-        pytest --cov=paymcp --cov-report=xml --cov-report=term --cov-report=html
+        pytest --cov=src --cov-report=xml --cov-report=term --cov-report=html
         echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
         echo "Coverage report has been generated" >> $GITHUB_STEP_SUMMARY
         python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); coverage = round(float(root.get('line-rate', 0)) * 100, 2); print(f'Overall Coverage: {coverage}%')" >> $GITHUB_STEP_SUMMARY
