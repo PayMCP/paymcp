@@ -1,10 +1,10 @@
 name: Code Coverage
 
 on:
-  pull_request:
-    branches: [main, master, develop]
   push:
     branches: [main, master, develop, 'feat/**']
+  pull_request:
+    branches: [main, master, develop]
 
 permissions:
   contents: read
@@ -19,7 +19,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Fetch all history for proper diff coverage
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -39,7 +39,6 @@ jobs:
     - name: Generate detailed coverage report
       id: detailed_coverage
       run: |
-        # Generate detailed module coverage table
         echo "COVERAGE_DETAILS<<EOF" >> $GITHUB_OUTPUT
         python .github/scripts/generate_coverage_report.py
         echo "EOF" >> $GITHUB_OUTPUT
@@ -51,13 +50,10 @@ jobs:
     - name: Check overall coverage
       id: coverage_check
       run: |
-        # Extract overall coverage from XML report
         OVERALL_COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(int(float(root.get('line-rate', 0)) * 100))")
-
         echo "overall_coverage=$OVERALL_COVERAGE" >> $GITHUB_OUTPUT
         echo "Overall coverage: $OVERALL_COVERAGE%"
 
-        # Check if overall coverage meets 90% threshold
         if [ "$OVERALL_COVERAGE" -lt "90" ]; then
           echo "❌ Overall coverage is below 90% threshold ($OVERALL_COVERAGE%)"
           echo "coverage_status=failed" >> $GITHUB_OUTPUT
@@ -67,7 +63,6 @@ jobs:
           echo "coverage_status=passed" >> $GITHUB_OUTPUT
         fi
 
-
     - name: Comment PR with coverage report
       uses: actions/github-script@v7
       if: github.event_name == 'pull_request' && github.event.action != 'closed'
@@ -75,10 +70,7 @@ jobs:
         script: |
           const overallCoverage = '${{ steps.coverage_check.outputs.overall_coverage }}' || 'N/A';
           const coverageStatus = '${{ steps.coverage_check.outputs.coverage_status }}';
-
           const statusEmoji = coverageStatus === 'passed' ? '✅' : '❌';
-          const statusText = coverageStatus === 'passed' ? 'PASSED' : 'FAILED';
-
           const coverageDetails = `${{ steps.detailed_coverage.outputs.COVERAGE_DETAILS }}`;
 
           const comment = `## ${statusEmoji} Coverage Report
@@ -103,7 +95,6 @@ The detailed HTML coverage report is available in the [workflow artifacts](https
 ---
 *Report generated for [\`${context.sha.substring(0, 7)}\`](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}) • ${new Date().toISOString()}*`;
 
-          // Find and delete existing coverage comments
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -115,7 +106,6 @@ The detailed HTML coverage report is available in the [workflow artifacts](https
             comment.body.includes('Coverage Report')
           );
 
-          // Delete all existing coverage comments
           for (const botComment of botComments) {
             await github.rest.issues.deleteComment({
               owner: context.repo.owner,
@@ -124,7 +114,6 @@ The detailed HTML coverage report is available in the [workflow artifacts](https
             });
           }
 
-          // Create new comment
           await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
