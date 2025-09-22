@@ -34,34 +34,111 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        pytest --cov=src --cov-report=xml --cov-report=term --cov-report=html --cov-report=json || true
+        pytest --cov=src --cov-branch --cov-report=xml --cov-report=term --cov-report=html --cov-report=json || true
 
     - name: Generate detailed coverage report
       id: detailed_coverage
       run: |
-        # Generate detailed module coverage
+        # Generate detailed module coverage table
         echo "COVERAGE_DETAILS<<EOF" >> $GITHUB_OUTPUT
         python -c "
         import json
+        import xml.etree.ElementTree as ET
+
         try:
+            # Read JSON for detailed data
             with open('coverage.json') as f:
-                data = json.load(f)
+                json_data = json.load(f)
 
-            files = data['files']
-            details = []
+            # Read XML for line numbers
+            xml_tree = ET.parse('coverage.xml')
+            xml_root = xml_tree.getroot()
 
-            for filepath, file_data in files.items():
+            # Create mapping from XML
+            xml_files = {}
+            for pkg in xml_root.findall('.//package'):
+                for cls in pkg.findall('classes/class'):
+                    filename = cls.get('filename', '')
+                    lines = cls.findall('lines/line')
+                    uncovered = [line.get('number') for line in lines if line.get('hits') == '0']
+                    xml_files[filename] = uncovered
+
+            print('| File | Statements | Branches | Functions | Lines | Uncovered Lines |')
+            print('|------|------------|----------|-----------|-------|-----------------|')
+
+            files = json_data.get('files', {})
+            totals = json_data.get('totals', {})
+
+            # Sort files by path for consistent ordering
+            sorted_files = sorted(files.items())
+
+            for filepath, file_data in sorted_files:
                 if filepath.startswith('src/paymcp/'):
-                    module = filepath.replace('src/paymcp/', '').replace('/', '.').replace('.py', '')
-                    coverage_pct = round(file_data['summary']['percent_covered'], 1)
-                    details.append(f'- **{module}**: {coverage_pct}%')
+                    # Clean file path for display
+                    display_path = filepath.replace('src/paymcp/', '')
 
-            if details:
-                print('\n'.join(details))
-            else:
-                print('- No detailed coverage data available')
+                    summary = file_data.get('summary', {})
+
+                    # Get coverage percentages
+                    num_statements = summary.get('num_statements', 0)
+                    covered_statements = summary.get('covered_statements', 0)
+                    missing_statements = summary.get('missing_statements', 0)
+
+                    num_branches = summary.get('num_branches', 0)
+                    covered_branches = summary.get('covered_branches', 0)
+                    missing_branches = summary.get('missing_branches', 0)
+
+                    # Calculate percentages
+                    stmt_pct = round((covered_statements / num_statements * 100) if num_statements > 0 else 100, 1)
+                    branch_pct = round((covered_branches / num_branches * 100) if num_branches > 0 else 100, 1)
+
+                    # For Python, functions and lines are typically the same as statements
+                    func_pct = stmt_pct  # Python doesn't separate functions in coverage.py
+                    line_pct = round(summary.get('percent_covered', 0), 1)
+
+                    # Get uncovered lines
+                    missing_lines = file_data.get('missing_lines', [])
+                    if missing_lines:
+                        # Group consecutive lines into ranges
+                        ranges = []
+                        start = missing_lines[0]
+                        end = start
+
+                        for line in missing_lines[1:]:
+                            if line == end + 1:
+                                end = line
+                            else:
+                                if start == end:
+                                    ranges.append(str(start))
+                                else:
+                                    ranges.append(f'{start}-{end}')
+                                start = end = line
+
+                        if start == end:
+                            ranges.append(str(start))
+                        else:
+                            ranges.append(f'{start}-{end}')
+
+                        uncovered_display = ', '.join(ranges) if len(ranges) <= 5 else f'{ranges[0]}, {ranges[1]}, ... ({len(missing_lines)} lines)'
+                    else:
+                        uncovered_display = '-'
+
+                    # Format percentages
+                    stmt_display = f'{stmt_pct}%' if stmt_pct < 100 else '💯'
+                    branch_display = f'{branch_pct}%' if branch_pct < 100 else '💯'
+                    func_display = f'{func_pct}%' if func_pct < 100 else '💯'
+                    line_display = f'{line_pct}%' if line_pct < 100 else '💯'
+
+                    print(f'| {display_path} | {stmt_display} | {branch_display} | {func_display} | {line_display} | {uncovered_display} |')
+
+            # Add totals row
+            total_stmt_pct = round(totals.get('percent_covered', 0), 1)
+            print(f'| **TOTAL** | **{total_stmt_pct}%** | **{total_stmt_pct}%** | **{total_stmt_pct}%** | **{total_stmt_pct}%** | - |')
+
         except Exception as e:
-            print(f'- Error generating details: {str(e)}')
+            print('| File | Error |')
+            print('|------|-------|')
+            print(f'| Coverage Report | Error: {str(e)} |')
         " >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
@@ -104,17 +181,25 @@ jobs:
 
           const comment = `## ${statusEmoji} Coverage Report
 
-          ### Summary
-          - **Overall Coverage:** ${overallCoverage}% (Minimum required: 90%)
-          - **Status:** ${statusText}
+**Overall Coverage: ${overallCoverage}%** ${coverageStatus === 'passed' ? '(✅ Passed)' : '(❌ Below 90% threshold)'}
 
-          ### Module Coverage
-          ${coverageDetails}
+### Coverage Details
 
-          ${coverageStatus === 'failed' ? '### ⚠️ Action Required\nPlease add tests to ensure overall coverage is at least 90%.' : '### ✨ Great job!\nYour code meets the coverage requirements.'}
+${coverageDetails}
 
-          ---
-          *Coverage report generated for commit ${context.sha.substring(0, 7)} at ${new Date().toISOString()}*`;
+${coverageStatus === 'failed' ?
+'> **⚠️ Action Required**  \n> Coverage is below the 90% threshold. Please add tests to improve coverage.' :
+'> **✅ Excellent!**  \n> Your code meets the coverage requirements.'}
+
+<details>
+<summary>📊 Want to see the full HTML report?</summary>
+
+The detailed HTML coverage report is available in the [workflow artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).
+
+</details>
+
+---
+*Report generated for [\`${context.sha.substring(0, 7)}\`](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}) • ${new Date().toISOString()}*`;
 
           // Find and delete existing coverage comments
           const { data: comments } = await github.rest.issues.listComments({
