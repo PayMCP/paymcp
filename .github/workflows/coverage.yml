@@ -168,7 +168,7 @@ jobs:
 
     - name: Comment PR with coverage report
       uses: actions/github-script@v7
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' && github.event.action != 'closed'
       with:
         script: |
           const overallCoverage = '${{ steps.coverage_check.outputs.overall_coverage }}' || 'N/A';
@@ -188,8 +188,8 @@ jobs:
 ${coverageDetails}
 
 ${coverageStatus === 'failed' ?
-'> **⚠️ Action Required**  \n> Coverage is below the 90% threshold. Please add tests to improve coverage.' :
-'> **✅ Excellent!**  \n> Your code meets the coverage requirements.'}
+'> **⚠️ Action Required**\\n> Coverage is below the 90% threshold. Please add tests to improve coverage.' :
+'> **✅ Excellent!**\\n> Your code meets the coverage requirements.'}
 
 <details>
 <summary>📊 Want to see the full HTML report?</summary>
@@ -229,6 +229,16 @@ The detailed HTML coverage report is available in the [workflow artifacts](https
             issue_number: context.issue.number,
             body: comment
           });
+
+    - name: Display coverage summary for push events
+      if: github.event_name == 'push'
+      run: |
+        echo "## 📊 Coverage Summary for Push Event" >> $GITHUB_STEP_SUMMARY
+        echo "**Overall Coverage:** ${{ steps.coverage_check.outputs.overall_coverage }}%" >> $GITHUB_STEP_SUMMARY
+        echo "**Status:** ${{ steps.coverage_check.outputs.coverage_status }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Coverage Details" >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.detailed_coverage.outputs.COVERAGE_DETAILS }}" >> $GITHUB_STEP_SUMMARY
 
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
