@@ -1,10 +1,10 @@
 name: Code Coverage
 
 on:
-  push:
-    branches: [main, master, develop, 'feat/**']
   pull_request:
     branches: [main, master, develop]
+  push:
+    branches: [main, master, develop, 'feat/**']
 
 permissions:
   contents: read
@@ -19,7 +19,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0
+        fetch-depth: 0  # Fetch all history for proper diff coverage
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -34,13 +34,35 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        pytest --cov=src --cov-branch --cov-report=xml --cov-report=term --cov-report=html --cov-report=json || true
+        pytest --cov=src --cov-report=xml --cov-report=term --cov-report=html --cov-report=json || true
 
     - name: Generate detailed coverage report
       id: detailed_coverage
       run: |
+        # Generate detailed module coverage
         echo "COVERAGE_DETAILS<<EOF" >> $GITHUB_OUTPUT
-        python .github/scripts/generate_coverage_report.py
+        python -c "
+        import json
+        try:
+            with open('coverage.json') as f:
+                data = json.load(f)
+
+            files = data['files']
+            details = []
+
+            for filepath, file_data in files.items():
+                if filepath.startswith('src/paymcp/'):
+                    module = filepath.replace('src/paymcp/', '').replace('/', '.').replace('.py', '')
+                    coverage_pct = round(file_data['summary']['percent_covered'], 1)
+                    details.append(f'- **{module}**: {coverage_pct}%')
+
+            if details:
+                print('\n'.join(details))
+            else:
+                print('- No detailed coverage data available')
+        except Exception as e:
+            print(f'- Error generating details: {str(e)}')
+        " >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Generate coverage badge
@@ -50,10 +72,13 @@ jobs:
     - name: Check overall coverage
       id: coverage_check
       run: |
+        # Extract overall coverage from XML report
         OVERALL_COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(int(float(root.get('line-rate', 0)) * 100))")
+
         echo "overall_coverage=$OVERALL_COVERAGE" >> $GITHUB_OUTPUT
         echo "Overall coverage: $OVERALL_COVERAGE%"
 
+        # Check if overall coverage meets 90% threshold
         if [ "$OVERALL_COVERAGE" -lt "90" ]; then
           echo "❌ Overall coverage is below 90% threshold ($OVERALL_COVERAGE%)"
           echo "coverage_status=failed" >> $GITHUB_OUTPUT
@@ -63,38 +88,35 @@ jobs:
           echo "coverage_status=passed" >> $GITHUB_OUTPUT
         fi
 
+
     - name: Comment PR with coverage report
       uses: actions/github-script@v7
-      if: github.event_name == 'pull_request' && github.event.action != 'closed'
+      if: github.event_name == 'pull_request'
       with:
         script: |
           const overallCoverage = '${{ steps.coverage_check.outputs.overall_coverage }}' || 'N/A';
           const coverageStatus = '${{ steps.coverage_check.outputs.coverage_status }}';
+
           const statusEmoji = coverageStatus === 'passed' ? '✅' : '❌';
+          const statusText = coverageStatus === 'passed' ? 'PASSED' : 'FAILED';
+
           const coverageDetails = `${{ steps.detailed_coverage.outputs.COVERAGE_DETAILS }}`;
 
           const comment = `## ${statusEmoji} Coverage Report
 
-**Overall Coverage: ${overallCoverage}%** ${coverageStatus === 'passed' ? '(✅ Passed)' : '(❌ Below 90% threshold)'}
+          ### Summary
+          - **Overall Coverage:** ${overallCoverage}% (Minimum required: 90%)
+          - **Status:** ${statusText}
 
-### Coverage Details
+          ### Module Coverage
+          ${coverageDetails}
 
-${coverageDetails}
+          ${coverageStatus === 'failed' ? '### ⚠️ Action Required\nPlease add tests to ensure overall coverage is at least 90%.' : '### ✨ Great job!\nYour code meets the coverage requirements.'}
 
-${coverageStatus === 'failed' ?
-'> **⚠️ Action Required**\\n> Coverage is below the 90% threshold. Please add tests to improve coverage.' :
-'> **✅ Excellent!**\\n> Your code meets the coverage requirements.'}
+          ---
+          *Coverage report generated for commit ${context.sha.substring(0, 7)} at ${new Date().toISOString()}*`;
 
-<details>
-<summary>📊 Want to see the full HTML report?</summary>
-
-The detailed HTML coverage report is available in the [workflow artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).
-
-</details>
-
----
-*Report generated for [\`${context.sha.substring(0, 7)}\`](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}) • ${new Date().toISOString()}*`;
-
+          // Find and delete existing coverage comments
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -106,6 +128,7 @@ The detailed HTML coverage report is available in the [workflow artifacts](https
             comment.body.includes('Coverage Report')
           );
 
+          // Delete all existing coverage comments
           for (const botComment of botComments) {
             await github.rest.issues.deleteComment({
               owner: context.repo.owner,
@@ -114,22 +137,13 @@ The detailed HTML coverage report is available in the [workflow artifacts](https
             });
           }
 
+          // Create new comment
           await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
             body: comment
           });
-
-    - name: Display coverage summary for push events
-      if: github.event_name == 'push'
-      run: |
-        echo "## 📊 Coverage Summary for Push Event" >> $GITHUB_STEP_SUMMARY
-        echo "**Overall Coverage:** ${{ steps.coverage_check.outputs.overall_coverage }}%" >> $GITHUB_STEP_SUMMARY
-        echo "**Status:** ${{ steps.coverage_check.outputs.coverage_status }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Coverage Details" >> $GITHUB_STEP_SUMMARY
-        echo "${{ steps.detailed_coverage.outputs.COVERAGE_DETAILS }}" >> $GITHUB_STEP_SUMMARY
 
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
