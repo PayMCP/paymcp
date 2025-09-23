@@ -21,7 +21,7 @@ def scan_for_secrets(directory):
     }
 
     excluded_dirs = {'.git', '__pycache__', '.venv', 'venv', 'node_modules', '.pytest_cache', '.github'}
-    excluded_files = {'test_', '_test', '.test', 'free-compliance-scan.py', 'compliance-scan-results.json'}
+    excluded_files = {'test_', '_test', '.test', 'compliance-scan.py', 'compliance-scan-results.json'}
 
     for root, dirs, files in os.walk(directory):
         # Skip excluded directories
@@ -73,7 +73,7 @@ def scan_for_payment_data(directory):
     }
 
     excluded_dirs = {'.git', '__pycache__', '.venv', 'venv', 'node_modules', '.pytest_cache', '.github'}
-    excluded_files = {'test_', '_test', '.test', 'free-compliance-scan.py', 'compliance-scan-results.json'}
+    excluded_files = {'test_', '_test', '.test', 'compliance-scan.py', 'compliance-scan-results.json'}
 
     for root, dirs, files in os.walk(directory):
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
