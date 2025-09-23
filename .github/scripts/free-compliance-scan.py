@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Free compliance scanner for payment processing security
-Checks for common security issues without requiring licenses
+Compliance scanner for payment processing security
+Checks for common security issues and compliance requirements
 """
 
 import os
@@ -128,7 +128,7 @@ def check_dependencies():
 
 def main():
     """Main compliance scanner"""
-    print("🔍 Starting free compliance scan...")
+    print("🔍 Starting compliance scan...")
 
     # Scan current directory
     directory = '.'

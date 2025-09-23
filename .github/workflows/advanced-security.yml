@@ -16,8 +16,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  free-compliance-scan:
-    name: Free Compliance Scan
+  compliance-scan:
+    name: Compliance Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +31,7 @@ jobs:
       with:
         python-version: '3.13'
 
-    - name: Run free compliance scanner
+    - name: Run compliance scanner
       run: |
         python .github/scripts/free-compliance-scan.py
         echo "Compliance scan completed"
@@ -99,7 +99,7 @@ jobs:
   additional-security-report:
     name: Additional Security Summary
     runs-on: ubuntu-latest
-    needs: [free-compliance-scan, pci-compliance-check]
+    needs: [compliance-scan, pci-compliance-check]
     if: always() && github.event_name == 'pull_request'
     permissions:
       pull-requests: write
@@ -116,7 +116,7 @@ jobs:
         echo "## 🔒 Additional Security Checks" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
         echo "### Security Scans Performed:" >> $GITHUB_OUTPUT
-        echo "- 🔍 **Free Compliance Scan**: Secrets, API keys, and dependency checks" >> $GITHUB_OUTPUT
+        echo "- 🔍 **Compliance Scan**: Secrets, API keys, and dependency checks" >> $GITHUB_OUTPUT
         echo "- 💳 **Payment Security**: Compliance and payment data exposure check" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
 
