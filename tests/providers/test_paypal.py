@@ -79,6 +79,7 @@ class TestPayPalProvider:
 
     def test_get_name(self, paypal_provider):
         assert paypal_provider.get_name() == "paypal"
+
     def test_get_token_success(self, mock_logger):
         mock_resp = Mock()
         mock_resp.json.return_value = {"access_token": "new_token_abc"}

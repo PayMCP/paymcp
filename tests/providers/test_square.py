@@ -70,6 +70,7 @@ class TestSquareProvider:
 
     def test_get_name(self, square_provider):
         assert square_provider.get_name() == "square"
+
     def test_build_headers(self, square_provider):
         headers = square_provider._build_headers()
         assert headers == {

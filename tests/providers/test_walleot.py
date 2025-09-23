@@ -32,6 +32,7 @@ class TestWalleotProvider:
 
     def test_get_name(self, walleot_provider):
         assert walleot_provider.get_name() == "walleot"
+
     def test_build_headers(self, walleot_provider):
         headers = walleot_provider._build_headers()
         assert headers == {
