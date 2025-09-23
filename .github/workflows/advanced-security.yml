@@ -138,37 +138,89 @@ jobs:
         # Check for high-severity issues
         HIGH_SEVERITY_FOUND=false
 
-        # Check payment security issues
-        if [ -f "payment-security-${{ github.sha }}/pci-compliance-report.txt" ]; then
-          if grep -q "❌" "payment-security-${{ github.sha }}/pci-compliance-report.txt" 2>/dev/null; then
-            echo "🚨 **CRITICAL: Payment Security Issues Detected**" >> $GITHUB_OUTPUT
-            echo "- Potential payment data exposure found" >> $GITHUB_OUTPUT
-            HIGH_SEVERITY_FOUND=true
-          fi
-        fi
-
-        # Check compliance scan issues
+        # Generate detailed compliance scan report
+        echo "### 📊 Compliance Scan Results" >> $GITHUB_OUTPUT
         if [ -f "compliance-scan-${{ github.sha }}/compliance-scan-results.json" ]; then
-          if python -c "
+          python -c "
 import json
 try:
     with open('compliance-scan-${{ github.sha }}/compliance-scan-results.json') as f:
         data = json.load(f)
-    if data['summary']['high_severity'] > 0:
+
+    summary = data['summary']
+    print(f'- **Secrets Found**: {summary[\"secrets_found\"]}')
+    print(f'- **Payment Issues**: {summary[\"payment_issues\"]}')
+    print(f'- **Dependency Checks**: {summary[\"dependency_checks\"]}')
+    print(f'- **High Severity**: {summary[\"high_severity\"]}')
+    print('')
+
+    if summary['secrets_found'] > 0:
+        print('**🔑 Secrets Detected:**')
+        for secret in data['secrets'][:3]:  # Show first 3
+            print(f'- {secret[\"type\"]} in {secret[\"file\"]}:{secret[\"line\"]}')
+        if len(data['secrets']) > 3:
+            print(f'- ... and {len(data[\"secrets\"]) - 3} more')
+        print('')
+
+    if summary['payment_issues'] > 0:
+        print('**💳 Payment Data Issues:**')
+        for issue in data['payment_data'][:3]:  # Show first 3
+            severity = issue.get('severity', 'unknown')
+            print(f'- {issue[\"type\"]} ({severity}) in {issue[\"file\"]}:{issue[\"line\"]}')
+        if len(data['payment_data']) > 3:
+            print(f'- ... and {len(data[\"payment_data\"]) - 3} more')
+        print('')
+
+    if summary['dependency_checks'] > 0:
+        print('**📦 Dependency Issues:**')
+        for dep in data['dependencies'][:3]:  # Show first 3
+            print(f'- {dep[\"message\"]} in {dep[\"file\"]}')
+        if len(data['dependencies']) > 3:
+            print(f'- ... and {len(data[\"dependencies\"]) - 3} more')
+        print('')
+
+    # Set exit code for status checking
+    if summary['high_severity'] > 0:
         exit(1)
-    elif data['summary']['secrets_found'] > 0 or data['summary']['payment_issues'] > 0:
+    elif summary['secrets_found'] > 0 or summary['payment_issues'] > 0:
         exit(2)
     exit(0)
-except:
+except Exception as e:
+    print(f'❌ Error reading compliance results: {str(e)}')
     exit(0)
-" 2>/dev/null; then
-            echo "✅ Compliance scan clean" >> $GITHUB_OUTPUT
-          elif [ $? -eq 1 ]; then
+" >> $GITHUB_OUTPUT
+
+          compliance_exit_code=$?
+          if [ $compliance_exit_code -eq 1 ]; then
             echo "🚨 **CRITICAL: High-severity compliance issues detected**" >> $GITHUB_OUTPUT
             HIGH_SEVERITY_FOUND=true
-          elif [ $? -eq 2 ]; then
-            echo "⚠️ **Compliance warnings detected**" >> $GITHUB_OUTPUT
+          elif [ $compliance_exit_code -eq 2 ]; then
+            echo "⚠️ **Compliance warnings detected - review recommended**" >> $GITHUB_OUTPUT
+          else
+            echo "✅ **Compliance scan: No issues detected**" >> $GITHUB_OUTPUT
           fi
+        else
+          echo "❌ Compliance scan results not found" >> $GITHUB_OUTPUT
+        fi
+
+        echo "" >> $GITHUB_OUTPUT
+
+        # Generate detailed payment security report
+        echo "### 💳 Payment Security Results" >> $GITHUB_OUTPUT
+        if [ -f "payment-security-${{ github.sha }}/pci-compliance-report.txt" ]; then
+          echo "\`\`\`" >> $GITHUB_OUTPUT
+          cat "payment-security-${{ github.sha }}/pci-compliance-report.txt" >> $GITHUB_OUTPUT
+          echo "\`\`\`" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+
+          if grep -q "❌" "payment-security-${{ github.sha }}/pci-compliance-report.txt" 2>/dev/null; then
+            echo "🚨 **CRITICAL: Payment Security Issues Detected**" >> $GITHUB_OUTPUT
+            HIGH_SEVERITY_FOUND=true
+          else
+            echo "✅ **Payment security: No issues detected**" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "❌ Payment security scan results not found" >> $GITHUB_OUTPUT
         fi
 
         echo "" >> $GITHUB_OUTPUT
@@ -207,6 +259,8 @@ except:
             comment.body.includes('PCI')
           );
 
+          console.log(`Found ${additionalSecurityComments.length} old additional security comments to delete`);
+
           // Delete all existing additional security comments
           for (const comment of additionalSecurityComments) {
             try {
@@ -215,6 +269,7 @@ except:
                 repo: context.repo.repo,
                 comment_id: comment.id,
               });
+              console.log(`Deleted additional security comment ${comment.id}`);
             } catch (error) {
               console.log(`Could not delete additional security comment ${comment.id}: ${error.message}`);
             }
@@ -226,11 +281,17 @@ except:
       with:
         script: |
           const additionalSecuritySummary = `${{ steps.additional_security_summary.outputs.ADDITIONAL_SECURITY_SUMMARY }}`;
+          const additionalSecurityStatus = '${{ steps.additional_security_summary.outputs.additional_security_status }}';
+
+          console.log(`Additional Security Status: ${additionalSecurityStatus}`);
+          console.log(`Additional Security Summary Length: ${additionalSecuritySummary.length}`);
 
           // Create new comment
-          await github.rest.issues.createComment({
+          const comment = await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
             body: additionalSecuritySummary
           });
+
+          console.log(`Created additional security comment with ID: ${comment.data.id}`);
