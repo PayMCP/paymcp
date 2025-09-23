@@ -195,7 +195,7 @@ jobs:
     name: Security Report Summary
     runs-on: ubuntu-latest
     needs: [codeql, dependency-scan, bandit-scan, semgrep-scan]
-    if: always() && github.event_name == 'pull_request'
+    if: always()
     permissions:
       pull-requests: write
 
@@ -263,6 +263,7 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Comment PR with security summary
+      if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
