@@ -60,7 +60,6 @@ class TestAdyenProvider:
 
     def test_get_name(self, adyen_provider):
         assert adyen_provider.get_name() == "adyen"
-
     def test_build_headers(self, adyen_provider):
         headers = adyen_provider._build_headers()
         assert headers == {

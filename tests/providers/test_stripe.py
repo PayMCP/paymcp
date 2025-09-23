@@ -47,7 +47,6 @@ class TestStripeProvider:
 
     def test_get_name(self, stripe_provider):
         assert stripe_provider.get_name() == "stripe"
-
     def test_create_payment_success(self, stripe_provider, mock_logger):
         mock_response = {
             "id": "cs_test_123",
