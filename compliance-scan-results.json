@@ -1,0 +1,175 @@
+{
+  "summary": {
+    "secrets_found": 1,
+    "payment_issues": 25,
+    "dependency_checks": 1,
+    "high_severity": 0
+  },
+  "secrets": [
+    {
+      "type": "private_key",
+      "file": ".github/scripts/free-compliance-scan.py",
+      "line": 19,
+      "text": "-----BEGIN.*PRIVATE KEY-----"
+    }
+  ],
+  "payment_data": [
+    {
+      "type": "payment_log",
+      "file": "tests/providers/test_paypal.py",
+      "line": 240,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": ".github/workflows/advanced-security.yml",
+      "line": 84,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": ".github/workflows/advanced-security.yml",
+      "line": 86,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": ".github/scripts/free-compliance-scan.py",
+      "line": 68,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": ".github/scripts/free-compliance-scan.py",
+      "line": 161,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/webview.py",
+      "line": 28,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/webview.py",
+      "line": 44,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/webview.py",
+      "line": 52,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/webview.py",
+      "line": 60,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/elicitation.py",
+      "line": 65,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/elicitation.py",
+      "line": 95,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/elicitation.py",
+      "line": 107,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/elicitation.py",
+      "line": 112,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/progress.py",
+      "line": 74,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/progress.py",
+      "line": 129,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/payment/flows/progress.py",
+      "line": 143,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/paypal.py",
+      "line": 78,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/paypal.py",
+      "line": 90,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/walleot.py",
+      "line": 44,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/adyen.py",
+      "line": 52,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/square.py",
+      "line": 93,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/square.py",
+      "line": 137,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/providers/stripe.py",
+      "line": 43,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/utils/elicitation.py",
+      "line": 55,
+      "severity": "medium"
+    },
+    {
+      "type": "payment_log",
+      "file": "src/paymcp/utils/elicitation.py",
+      "line": 59,
+      "severity": "medium"
+    }
+  ],
+  "dependencies": [
+    {
+      "type": "dependency_check",
+      "file": "pyproject.toml",
+      "message": "Check requests version against known vulnerabilities"
+    }
+  ]
+}
