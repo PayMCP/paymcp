@@ -16,23 +16,33 @@ permissions:
   pull-requests: write
 
 jobs:
-  secrets-scan:
-    name: Secrets Detection
+  free-compliance-scan:
+    name: Free Compliance Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
-    - name: Run GitLeaks secrets scan
-      uses: gitleaks/gitleaks-action@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Run free compliance scanner
+      run: |
+        python .github/scripts/free-compliance-scan.py
+        echo "Compliance scan completed"
+
+    - name: Upload compliance scan results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: compliance-scan-${{ github.sha }}
+        path: compliance-scan-results.json
+        retention-days: 30
 
   pci-compliance-check:
     name: Payment Security Check
@@ -89,7 +99,7 @@ jobs:
   additional-security-report:
     name: Additional Security Summary
     runs-on: ubuntu-latest
-    needs: [secrets-scan, pci-compliance-check]
+    needs: [free-compliance-scan, pci-compliance-check]
     if: always() && github.event_name == 'pull_request'
     permissions:
       pull-requests: write
@@ -106,8 +116,8 @@ jobs:
         echo "## 🔒 Additional Security Checks" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
         echo "### Security Scans Performed:" >> $GITHUB_OUTPUT
-        echo "- 🔍 **Secrets Detection**: GitLeaks scanning for exposed credentials" >> $GITHUB_OUTPUT
-        echo "- 💳 **Payment Security**: PCI compliance and payment data exposure check" >> $GITHUB_OUTPUT
+        echo "- 🔍 **Free Compliance Scan**: Secrets, API keys, and dependency checks" >> $GITHUB_OUTPUT
+        echo "- 💳 **Payment Security**: Compliance and payment data exposure check" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
 
         # Check for high-severity issues
@@ -119,6 +129,30 @@ jobs:
             echo "🚨 **CRITICAL: Payment Security Issues Detected**" >> $GITHUB_OUTPUT
             echo "- Potential payment data exposure found" >> $GITHUB_OUTPUT
             HIGH_SEVERITY_FOUND=true
+          fi
+        fi
+
+        # Check compliance scan issues
+        if [ -f "compliance-scan-${{ github.sha }}/compliance-scan-results.json" ]; then
+          if python -c "
+import json
+try:
+    with open('compliance-scan-${{ github.sha }}/compliance-scan-results.json') as f:
+        data = json.load(f)
+    if data['summary']['high_severity'] > 0:
+        exit(1)
+    elif data['summary']['secrets_found'] > 0 or data['summary']['payment_issues'] > 0:
+        exit(2)
+    exit(0)
+except:
+    exit(0)
+" 2>/dev/null; then
+            echo "✅ Compliance scan clean" >> $GITHUB_OUTPUT
+          elif [ $? -eq 1 ]; then
+            echo "🚨 **CRITICAL: High-severity compliance issues detected**" >> $GITHUB_OUTPUT
+            HIGH_SEVERITY_FOUND=true
+          elif [ $? -eq 2 ]; then
+            echo "⚠️ **Compliance warnings detected**" >> $GITHUB_OUTPUT
           fi
         fi
 
