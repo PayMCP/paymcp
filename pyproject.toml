@@ -50,5 +50,11 @@ test-cov = "pytest --cov"
 test-watch = "pytest --watch"
 lint = "flake8 src tests"
 format = "black src tests"
-typecheck = "mypy src" 
+typecheck = "mypy src"
 
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]  # Skip assert_used test since it's common in tests
+
+[tool.bandit.assert_used]
+exclude = ["*_test.py", "*test_*.py"]

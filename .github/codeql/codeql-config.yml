@@ -1,0 +1,19 @@
+name: "CodeQL Configuration"
+
+queries:
+  - uses: security-and-quality
+
+paths:
+  - src/
+
+paths-ignore:
+  - tests/
+  - "**/*.md"
+  - "**/*.txt"
+  - ".github/"
+
+packs:
+  python:
+    - codeql/python-queries:codeql-suites/python-security-and-quality.qls
+
+disable-default-queries: false

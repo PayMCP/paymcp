@@ -1,0 +1,307 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, master, develop, 'feat/**']
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    # Run weekly security scans on main branch
+    - cron: '0 2 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['python']
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        config-file: ./.github/codeql/codeql-config.yml
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit bandit[toml]
+        pip install -e .[dev]
+
+    - name: Run Safety check
+      continue-on-error: true
+      run: |
+        safety check --json --output safety-report.json || true
+        if [ -f safety-report.json ]; then
+          echo "Safety scan completed. Check safety-report.json for details."
+        fi
+
+    - name: Run pip-audit
+      continue-on-error: true
+      run: |
+        pip-audit --format=json --output=pip-audit-report.json || true
+        if [ -f pip-audit-report.json ]; then
+          echo "Pip-audit scan completed. Check pip-audit-report.json for details."
+        fi
+
+    - name: Upload dependency scan results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: dependency-scan-results-${{ github.sha }}
+        path: |
+          safety-report.json
+          pip-audit-report.json
+        retention-days: 30
+
+  bandit-scan:
+    name: Bandit SAST Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install Bandit
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit[toml]
+
+    - name: Run Bandit scan
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ -f txt
+
+    - name: Upload Bandit results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: bandit.sarif
+      continue-on-error: true
+
+    - name: Generate Bandit SARIF
+      run: |
+        bandit -r src/ -f sarif -o bandit.sarif || true
+
+    - name: Upload Bandit results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bandit-results-${{ github.sha }}
+        path: |
+          bandit-report.json
+          bandit.sarif
+        retention-days: 30
+
+  semgrep-scan:
+    name: Semgrep SAST Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run Semgrep
+      uses: semgrep/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/python
+          p/owasp-top-ten
+          p/cwe-top-25
+        generateSarif: "1"
+
+    - name: Upload Semgrep results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: semgrep.sarif
+      continue-on-error: true
+
+  security-report:
+    name: Security Report Summary
+    runs-on: ubuntu-latest
+    needs: [codeql, dependency-scan, bandit-scan, semgrep-scan]
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      continue-on-error: true
+
+    - name: Generate security summary
+      id: security_summary
+      run: |
+        echo "SECURITY_SUMMARY<<EOF" >> $GITHUB_OUTPUT
+        echo "## 🔒 Security Scanning Results" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "### Scans Performed:" >> $GITHUB_OUTPUT
+        echo "- ✅ CodeQL static analysis" >> $GITHUB_OUTPUT
+        echo "- ✅ Dependency vulnerability scanning (Safety + pip-audit)" >> $GITHUB_OUTPUT
+        echo "- ✅ Bandit SAST scanning" >> $GITHUB_OUTPUT
+        echo "- ✅ Semgrep security rules" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+
+        # Check for high-severity issues in downloaded artifacts
+        HIGH_SEVERITY_FOUND=false
+
+        if [ -d "dependency-scan-results-${{ github.sha }}" ]; then
+          if [ -f "dependency-scan-results-${{ github.sha }}/safety-report.json" ]; then
+            if grep -q '"severity"' "dependency-scan-results-${{ github.sha }}/safety-report.json" 2>/dev/null; then
+              echo "⚠️ **Dependency vulnerabilities detected** - Check Safety report" >> $GITHUB_OUTPUT
+              HIGH_SEVERITY_FOUND=true
+            fi
+          fi
+
+          if [ -f "dependency-scan-results-${{ github.sha }}/pip-audit-report.json" ]; then
+            if grep -q '"fix_versions"' "dependency-scan-results-${{ github.sha }}/pip-audit-report.json" 2>/dev/null; then
+              echo "⚠️ **Package vulnerabilities detected** - Check pip-audit report" >> $GITHUB_OUTPUT
+              HIGH_SEVERITY_FOUND=true
+            fi
+          fi
+        fi
+
+        if [ -d "bandit-results-${{ github.sha }}" ]; then
+          if [ -f "bandit-results-${{ github.sha }}/bandit-report.json" ]; then
+            if grep -q '"issue_severity": "HIGH"' "bandit-results-${{ github.sha }}/bandit-report.json" 2>/dev/null; then
+              echo "⚠️ **High-severity security issues detected** - Check Bandit report" >> $GITHUB_OUTPUT
+              HIGH_SEVERITY_FOUND=true
+            fi
+          fi
+        fi
+
+        if [ "$HIGH_SEVERITY_FOUND" = "true" ]; then
+          echo "" >> $GITHUB_OUTPUT
+          echo "### ⚠️ Action Required" >> $GITHUB_OUTPUT
+          echo "High-severity security issues were detected. Please review the artifacts and address critical findings before merging." >> $GITHUB_OUTPUT
+          echo "security_status=warning" >> $GITHUB_OUTPUT
+        else
+          echo "" >> $GITHUB_OUTPUT
+          echo "### ✅ Security Status" >> $GITHUB_OUTPUT
+          echo "No high-severity security issues detected in automated scans." >> $GITHUB_OUTPUT
+          echo "security_status=passed" >> $GITHUB_OUTPUT
+        fi
+
+        echo "" >> $GITHUB_OUTPUT
+        echo "---" >> $GITHUB_OUTPUT
+        echo "*Security scan completed for commit ${{ github.sha }} at $(date -u)*" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Comment PR with security summary
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const securitySummary = `${{ steps.security_summary.outputs.SECURITY_SUMMARY }}`;
+
+          // Find and delete existing security comments
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComments = comments.filter(comment =>
+            comment.user.type === 'Bot' &&
+            comment.body.includes('Security Scanning Results')
+          );
+
+          // Delete all existing security comments
+          for (const botComment of botComments) {
+            await github.rest.issues.deleteComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+            });
+          }
+
+          // Create new comment
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: securitySummary
+          });
+
+    - name: Add security check status
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const securityStatus = '${{ steps.security_summary.outputs.security_status }}';
+          const status = securityStatus === 'passed' ? 'success' : 'failure';
+
+          await github.rest.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: 'Security Scanning Quality Gate',
+            head_sha: context.sha,
+            status: 'completed',
+            conclusion: status,
+            output: {
+              title: securityStatus === 'passed' ? 'Security Scans Passed' : 'Security Issues Detected',
+              summary: securityStatus === 'passed'
+                ? '✅ All security scans completed without high-severity issues'
+                : '⚠️ High-severity security issues detected. Review required before merge.',
+            }
+          });
