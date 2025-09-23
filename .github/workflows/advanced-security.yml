@@ -107,11 +107,19 @@ jobs:
     name: Additional Security Summary
     runs-on: ubuntu-latest
     needs: [compliance-scan, pci-compliance-check]
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ always() && github.event_name == 'pull_request' }}
     permissions:
       pull-requests: write
 
     steps:
+    - name: Debug job status
+      run: |
+        echo "Job needs: compliance-scan, pci-compliance-check"
+        echo "Event name: ${{ github.event_name }}"
+        echo "Always condition: ${{ always() }}"
+        echo "Compliance scan result: ${{ needs.compliance-scan.result }}"
+        echo "PCI check result: ${{ needs.pci-compliance-check.result }}"
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       continue-on-error: true
