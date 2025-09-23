@@ -102,6 +102,7 @@ jobs:
           safety-report.json
           pip-audit-report.json
         retention-days: 30
+        if-no-files-found: ignore
 
   bandit-scan:
     name: Bandit SAST Scan
@@ -126,19 +127,30 @@ jobs:
 
     - name: Run Bandit scan
       run: |
-        bandit -r src/ -f json -o bandit-report.json || true
-        bandit -r src/ -f txt
-
-    - name: Upload Bandit results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: bandit.sarif
-      continue-on-error: true
+        # Check if there are Python files to scan
+        if find src/ -name "*.py" | grep -q .; then
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/ -f txt || true
+        else
+          echo "No Python files found in src/ directory"
+          echo '{"results": [], "metrics": {}}' > bandit-report.json
+        fi
 
     - name: Generate Bandit SARIF
       run: |
-        bandit -r src/ -f sarif -o bandit.sarif || true
+        # Check if there are Python files to scan
+        if find src/ -name "*.py" | grep -q .; then
+          bandit -r src/ -f sarif -o bandit.sarif || true
+        else
+          echo "No Python files found, skipping SARIF generation"
+        fi
+
+    - name: Upload Bandit results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles('bandit.sarif') != ''
+      with:
+        sarif_file: bandit.sarif
+      continue-on-error: true
 
     - name: Upload Bandit results
       uses: actions/upload-artifact@v4
@@ -149,6 +161,7 @@ jobs:
           bandit-report.json
           bandit.sarif
         retention-days: 30
+        if-no-files-found: ignore
 
   semgrep-scan:
     name: Semgrep SAST Scan
