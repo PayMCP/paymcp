@@ -163,56 +163,62 @@ jobs:
 
         if [ -n "$COMPLIANCE_FILE" ] && [ -f "$COMPLIANCE_FILE" ]; then
           echo "Found compliance file: $COMPLIANCE_FILE" >> $GITHUB_OUTPUT
-          COMPLIANCE_FILE="$COMPLIANCE_FILE" python -c "
+
+          # Create a temporary Python script to avoid YAML quoting issues
+          cat > /tmp/parse_compliance.py << 'PYTHON_SCRIPT'
 import json
+import sys
 import os
+
 compliance_file = os.environ.get('COMPLIANCE_FILE', 'compliance-scan-results.json')
+
 try:
     with open(compliance_file) as f:
         data = json.load(f)
 
     summary = data['summary']
-    print(f'- **Secrets Found**: {summary[\"secrets_found\"]}')
-    print(f'- **Payment Issues**: {summary[\"payment_issues\"]}')
-    print(f'- **Dependency Checks**: {summary[\"dependency_checks\"]}')
-    print(f'- **High Severity**: {summary[\"high_severity\"]}')
+    print(f'- **Secrets Found**: {summary["secrets_found"]}')
+    print(f'- **Payment Issues**: {summary["payment_issues"]}')
+    print(f'- **Dependency Checks**: {summary["dependency_checks"]}')
+    print(f'- **High Severity**: {summary["high_severity"]}')
     print('')
 
     if summary['secrets_found'] > 0:
         print('**🔑 Secrets Detected:**')
-        for secret in data['secrets'][:3]:  # Show first 3
-            print(f'- {secret[\"type\"]} in {secret[\"file\"]}:{secret[\"line\"]}')
+        for secret in data['secrets'][:3]:
+            print(f'- {secret["type"]} in {secret["file"]}:{secret["line"]}')
         if len(data['secrets']) > 3:
-            print(f'- ... and {len(data[\"secrets\"]) - 3} more')
+            print(f'- ... and {len(data["secrets"]) - 3} more')
         print('')
 
     if summary['payment_issues'] > 0:
         print('**💳 Payment Data Issues:**')
-        for issue in data['payment_data'][:3]:  # Show first 3
+        for issue in data['payment_data'][:3]:
             severity = issue.get('severity', 'unknown')
-            print(f'- {issue[\"type\"]} ({severity}) in {issue[\"file\"]}:{issue[\"line\"]}')
+            print(f'- {issue["type"]} ({severity}) in {issue["file"]}:{issue["line"]}')
         if len(data['payment_data']) > 3:
-            print(f'- ... and {len(data[\"payment_data\"]) - 3} more')
+            print(f'- ... and {len(data["payment_data"]) - 3} more')
         print('')
 
     if summary['dependency_checks'] > 0:
         print('**📦 Dependency Issues:**')
-        for dep in data['dependencies'][:3]:  # Show first 3
-            print(f'- {dep[\"message\"]} in {dep[\"file\"]}')
+        for dep in data['dependencies'][:3]:
+            print(f'- {dep["message"]} in {dep["file"]}')
         if len(data['dependencies']) > 3:
-            print(f'- ... and {len(data[\"dependencies\"]) - 3} more')
+            print(f'- ... and {len(data["dependencies"]) - 3} more')
         print('')
 
-    # Set exit code for status checking
     if summary['high_severity'] > 0:
-        exit(1)
+        sys.exit(1)
     elif summary['secrets_found'] > 0 or summary['payment_issues'] > 0:
-        exit(2)
-    exit(0)
+        sys.exit(2)
+    sys.exit(0)
 except Exception as e:
     print(f'❌ Error reading compliance results: {str(e)}')
-    exit(0)
-" >> $GITHUB_OUTPUT
+    sys.exit(0)
+PYTHON_SCRIPT
+
+          COMPLIANCE_FILE="$COMPLIANCE_FILE" python3 /tmp/parse_compliance.py >> $GITHUB_OUTPUT
 
           compliance_exit_code=$?
           if [ $compliance_exit_code -eq 1 ]; then
