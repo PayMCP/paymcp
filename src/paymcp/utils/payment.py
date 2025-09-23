@@ -17,7 +17,7 @@ def normalize_status(status):
     # Convert to string and lowercase
     try:
         status_str = str(status).strip().lower()
-    except:
+    except Exception:
         return "pending"
 
     # Map various statuses to standard values

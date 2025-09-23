@@ -24,6 +24,7 @@ class InMemorySessionStorage(ISessionStorage):
             if self.cleanup_task is None or self.cleanup_task.done():
                 self.cleanup_task = loop.create_task(self._cleanup_loop())
         except RuntimeError:
+            # No event loop running, cleanup will be handled manually if needed
             pass
 
     async def _cleanup_loop(self):
