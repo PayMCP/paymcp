@@ -420,8 +420,8 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const securitySummary = `${{ steps.security_summary.outputs.SECURITY_SUMMARY }}`;
-          const securityStatus = '${{ steps.security_summary.outputs.security_status }}';
+          const securitySummary = process.env.SECURITY_SUMMARY;
+          const securityStatus = process.env.SECURITY_STATUS;
 
           console.log(`Security Status: ${securityStatus}`);
           console.log(`Security Summary Length: ${securitySummary.length}`);
@@ -435,13 +435,16 @@ jobs:
           });
 
           console.log(`Created comment with ID: ${comment.data.id}`);
+      env:
+        SECURITY_SUMMARY: ${{ steps.security_summary.outputs.SECURITY_SUMMARY }}
+        SECURITY_STATUS: ${{ steps.security_summary.outputs.security_status }}
 
     - name: Add security check status
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
-          const securityStatus = '${{ steps.security_summary.outputs.security_status }}';
+          const securityStatus = process.env.SECURITY_STATUS;
 
           // Default to passed if status is undefined or not explicitly failed
           const actualStatus = securityStatus === 'warning' || securityStatus === 'failed' ? 'failure' : 'success';
@@ -467,3 +470,5 @@ jobs:
           });
 
           console.log(`Created check run with ID: ${checkRun.data.id}`);
+      env:
+        SECURITY_STATUS: ${{ steps.security_summary.outputs.security_status }}
