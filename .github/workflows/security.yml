@@ -283,6 +283,8 @@ jobs:
             comment.body.includes('Semgrep')
           );
 
+          console.log(`Found ${securityComments.length} old security comments to delete`);
+
           // Delete all existing security comments
           for (const comment of securityComments) {
             try {
@@ -291,28 +293,10 @@ jobs:
                 repo: context.repo.repo,
                 comment_id: comment.id,
               });
+              console.log(`Deleted comment ${comment.id}`);
             } catch (error) {
               console.log(`Could not delete comment ${comment.id}: ${error.message}`);
             }
-          }
-
-          // Delete previous security check runs
-          try {
-            const { data: checkRuns } = await github.rest.checks.listForRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: context.payload.pull_request.head.sha,
-              check_name: 'Security Scanning Quality Gate'
-            });
-
-            for (const checkRun of checkRuns.check_runs) {
-              if (checkRun.status === 'completed' && checkRun.name === 'Security Scanning Quality Gate') {
-                // Note: GitHub API doesn't allow deleting check runs, but we can update them
-                console.log(`Found old check run: ${checkRun.id}`);
-              }
-            }
-          } catch (error) {
-            console.log(`Could not clean up old check runs: ${error.message}`);
           }
 
     - name: Comment PR with security summary
@@ -321,14 +305,20 @@ jobs:
       with:
         script: |
           const securitySummary = `${{ steps.security_summary.outputs.SECURITY_SUMMARY }}`;
+          const securityStatus = '${{ steps.security_summary.outputs.security_status }}';
+
+          console.log(`Security Status: ${securityStatus}`);
+          console.log(`Security Summary Length: ${securitySummary.length}`);
 
           // Create new comment
-          await github.rest.issues.createComment({
+          const comment = await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
             body: securitySummary
           });
+
+          console.log(`Created comment with ID: ${comment.data.id}`);
 
     - name: Add security check status
       if: github.event_name == 'pull_request'
@@ -336,19 +326,28 @@ jobs:
       with:
         script: |
           const securityStatus = '${{ steps.security_summary.outputs.security_status }}';
-          const status = securityStatus === 'passed' ? 'success' : 'failure';
 
-          await github.rest.checks.create({
+          // Default to passed if status is undefined or not explicitly failed
+          const actualStatus = securityStatus === 'warning' || securityStatus === 'failed' ? 'failure' : 'success';
+          const title = actualStatus === 'success' ? 'Security Scans Passed' : 'Security Issues Detected';
+          const summary = actualStatus === 'success'
+            ? '✅ All security scans completed without high-severity issues'
+            : '⚠️ High-severity security issues detected. Review required before merge.';
+
+          console.log(`Security Status: "${securityStatus}" -> Check: ${actualStatus}`);
+          console.log(`Title: ${title}`);
+
+          const checkRun = await github.rest.checks.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
             name: 'Security Scanning Quality Gate',
             head_sha: context.sha,
             status: 'completed',
-            conclusion: status,
+            conclusion: actualStatus,
             output: {
-              title: securityStatus === 'passed' ? 'Security Scans Passed' : 'Security Issues Detected',
-              summary: securityStatus === 'passed'
-                ? '✅ All security scans completed without high-severity issues'
-                : '⚠️ High-severity security issues detected. Review required before merge.',
+              title: title,
+              summary: summary,
             }
           });
+
+          console.log(`Created check run with ID: ${checkRun.data.id}`);
