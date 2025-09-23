@@ -124,6 +124,15 @@ jobs:
       uses: actions/download-artifact@v4
       continue-on-error: true
 
+    - name: Debug artifact download
+      run: |
+        echo "Listing all downloaded files:"
+        find . -type f -name "*.json" -o -name "*.txt" | head -20
+        echo "Current directory contents:"
+        ls -la
+        echo "Looking for compliance scan results:"
+        find . -name "*compliance*" -type f
+
     - name: Generate additional security summary
       id: additional_security_summary
       run: |
@@ -140,11 +149,26 @@ jobs:
 
         # Generate detailed compliance scan report
         echo "### 📊 Compliance Scan Results" >> $GITHUB_OUTPUT
+
+        # Find compliance scan results file
+        COMPLIANCE_FILE=""
         if [ -f "compliance-scan-${{ github.sha }}/compliance-scan-results.json" ]; then
-          python -c "
+          COMPLIANCE_FILE="compliance-scan-${{ github.sha }}/compliance-scan-results.json"
+        elif [ -f "compliance-scan-results.json" ]; then
+          COMPLIANCE_FILE="compliance-scan-results.json"
+        else
+          # Look for any compliance results file
+          COMPLIANCE_FILE=$(find . -name "compliance-scan-results.json" -type f | head -1)
+        fi
+
+        if [ -n "$COMPLIANCE_FILE" ] && [ -f "$COMPLIANCE_FILE" ]; then
+          echo "Found compliance file: $COMPLIANCE_FILE" >> $GITHUB_OUTPUT
+          COMPLIANCE_FILE="$COMPLIANCE_FILE" python -c "
 import json
+import os
+compliance_file = os.environ.get('COMPLIANCE_FILE', 'compliance-scan-results.json')
 try:
-    with open('compliance-scan-${{ github.sha }}/compliance-scan-results.json') as f:
+    with open(compliance_file) as f:
         data = json.load(f)
 
     summary = data['summary']
@@ -207,13 +231,26 @@ except Exception as e:
 
         # Generate detailed payment security report
         echo "### 💳 Payment Security Results" >> $GITHUB_OUTPUT
+
+        # Find payment security report file
+        PAYMENT_FILE=""
         if [ -f "payment-security-${{ github.sha }}/pci-compliance-report.txt" ]; then
+          PAYMENT_FILE="payment-security-${{ github.sha }}/pci-compliance-report.txt"
+        elif [ -f "pci-compliance-report.txt" ]; then
+          PAYMENT_FILE="pci-compliance-report.txt"
+        else
+          # Look for any payment security report file
+          PAYMENT_FILE=$(find . -name "pci-compliance-report.txt" -type f | head -1)
+        fi
+
+        if [ -n "$PAYMENT_FILE" ] && [ -f "$PAYMENT_FILE" ]; then
+          echo "Found payment security file: $PAYMENT_FILE" >> $GITHUB_OUTPUT
           echo "\`\`\`" >> $GITHUB_OUTPUT
-          cat "payment-security-${{ github.sha }}/pci-compliance-report.txt" >> $GITHUB_OUTPUT
+          cat "$PAYMENT_FILE" >> $GITHUB_OUTPUT
           echo "\`\`\`" >> $GITHUB_OUTPUT
           echo "" >> $GITHUB_OUTPUT
 
-          if grep -q "❌" "payment-security-${{ github.sha }}/pci-compliance-report.txt" 2>/dev/null; then
+          if grep -q "❌" "$PAYMENT_FILE" 2>/dev/null; then
             echo "🚨 **CRITICAL: Payment Security Issues Detected**" >> $GITHUB_OUTPUT
             HIGH_SEVERITY_FOUND=true
           else
