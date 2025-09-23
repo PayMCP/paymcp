@@ -198,6 +198,7 @@ jobs:
     if: always()
     permissions:
       pull-requests: write
+      checks: write
 
     steps:
     - name: Download all artifacts
@@ -299,6 +300,7 @@ jobs:
           });
 
     - name: Add security check status
+      if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
