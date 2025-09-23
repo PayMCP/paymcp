@@ -1,0 +1,174 @@
+name: Additional Security Checks
+
+on:
+  push:
+    branches: [main, master, develop, 'feat/**']
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    # Run weekly additional security scans
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  secrets-scan:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Run GitLeaks secrets scan
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  pci-compliance-check:
+    name: Payment Security Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Payment data security assessment
+      run: |
+        echo "=== Payment Security Assessment ===" > pci-compliance-report.txt
+        echo "Checking for payment data security best practices..." >> pci-compliance-report.txt
+        echo "" >> pci-compliance-report.txt
+
+        # Check for hardcoded payment data patterns
+        echo "🔍 Scanning for hardcoded payment data..." >> pci-compliance-report.txt
+        if grep -r -i -E "(4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})" src/ tests/ 2>/dev/null; then
+          echo "❌ POTENTIAL CREDIT CARD NUMBERS DETECTED" >> pci-compliance-report.txt
+          echo "Found patterns that may be credit card numbers in source code" >> pci-compliance-report.txt
+        else
+          echo "✅ No obvious credit card number patterns found" >> pci-compliance-report.txt
+        fi
+
+        # Check for CVV patterns
+        echo "" >> pci-compliance-report.txt
+        echo "🔍 Scanning for CVV patterns..." >> pci-compliance-report.txt
+        if grep -r -i -E "(cvv|cvc|security.code)" src/ tests/ 2>/dev/null | grep -E "[0-9]{3,4}"; then
+          echo "❌ POTENTIAL CVV/CVC CODES DETECTED" >> pci-compliance-report.txt
+        else
+          echo "✅ No obvious CVV/CVC patterns found" >> pci-compliance-report.txt
+        fi
+
+        # Check for logging practices
+        echo "" >> pci-compliance-report.txt
+        echo "🔍 Checking logging practices..." >> pci-compliance-report.txt
+        if grep -r -i -E "(log|print).*\b(card|payment|pan|cvv|cvc)\b" src/ 2>/dev/null; then
+          echo "❌ POTENTIAL PAYMENT DATA LOGGING DETECTED" >> pci-compliance-report.txt
+          echo "Found logging that may expose payment data" >> pci-compliance-report.txt
+        else
+          echo "✅ No obvious payment data logging found" >> pci-compliance-report.txt
+        fi
+
+    - name: Upload payment security results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: payment-security-${{ github.sha }}
+        path: pci-compliance-report.txt
+        retention-days: 30
+
+  additional-security-report:
+    name: Additional Security Summary
+    runs-on: ubuntu-latest
+    needs: [secrets-scan, pci-compliance-check]
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      continue-on-error: true
+
+    - name: Generate additional security summary
+      id: additional_security_summary
+      run: |
+        echo "ADDITIONAL_SECURITY_SUMMARY<<EOF" >> $GITHUB_OUTPUT
+        echo "## 🔒 Additional Security Checks" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "### Security Scans Performed:" >> $GITHUB_OUTPUT
+        echo "- 🔍 **Secrets Detection**: GitLeaks scanning for exposed credentials" >> $GITHUB_OUTPUT
+        echo "- 💳 **Payment Security**: PCI compliance and payment data exposure check" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+
+        # Check for high-severity issues
+        HIGH_SEVERITY_FOUND=false
+
+        # Check payment security issues
+        if [ -f "payment-security-${{ github.sha }}/pci-compliance-report.txt" ]; then
+          if grep -q "❌" "payment-security-${{ github.sha }}/pci-compliance-report.txt" 2>/dev/null; then
+            echo "🚨 **CRITICAL: Payment Security Issues Detected**" >> $GITHUB_OUTPUT
+            echo "- Potential payment data exposure found" >> $GITHUB_OUTPUT
+            HIGH_SEVERITY_FOUND=true
+          fi
+        fi
+
+        echo "" >> $GITHUB_OUTPUT
+        if [ "$HIGH_SEVERITY_FOUND" = "true" ]; then
+          echo "### 🚨 CRITICAL ISSUES REQUIRE IMMEDIATE ATTENTION" >> $GITHUB_OUTPUT
+          echo "High-severity security issues detected. **DO NOT MERGE** until resolved." >> $GITHUB_OUTPUT
+          echo "additional_security_status=critical" >> $GITHUB_OUTPUT
+        else
+          echo "### ✅ Additional Security Status: CLEAN" >> $GITHUB_OUTPUT
+          echo "No high-severity security issues detected in additional scans." >> $GITHUB_OUTPUT
+          echo "additional_security_status=passed" >> $GITHUB_OUTPUT
+        fi
+
+        echo "" >> $GITHUB_OUTPUT
+        echo "---" >> $GITHUB_OUTPUT
+        echo "*Additional security scan completed for commit ${{ github.sha }} at $(date -u)*" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Comment PR with additional security summary
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const additionalSecuritySummary = `${{ steps.additional_security_summary.outputs.ADDITIONAL_SECURITY_SUMMARY }}`;
+
+          // Find and delete existing additional security comments
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComments = comments.filter(comment =>
+            comment.user.type === 'Bot' &&
+            comment.body.includes('Additional Security Checks')
+          );
+
+          // Delete all existing additional security comments
+          for (const botComment of botComments) {
+            await github.rest.issues.deleteComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+            });
+          }
+
+          // Create new comment
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: additionalSecuritySummary
+          });

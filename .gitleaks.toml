@@ -1,0 +1,65 @@
+# GitLeaks configuration for PayMCP project
+# Detects secrets, API keys, and sensitive information
+
+title = "PayMCP GitLeaks Configuration"
+
+[[rules]]
+description = "AWS Access Key"
+id = "aws-access-key"
+regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["key", "AWS"]
+
+[[rules]]
+description = "AWS Secret Key"
+id = "aws-secret-key"
+regex = '''[A-Za-z0-9/+=]{40}'''
+tags = ["key", "AWS"]
+
+[[rules]]
+description = "Generic API Key"
+id = "generic-api-key"
+regex = '''(?i)api[_-]?key[_-]?[:=]\s*['"]?[a-z0-9]{20,}['"]?'''
+tags = ["key", "API"]
+
+[[rules]]
+description = "Payment Provider API Key"
+id = "payment-api-key"
+regex = '''(?i)(stripe|paypal|square|coinbase|adyen)[_-]?(api[_-]?)?key[_-]?[:=]\s*['"]?[a-z0-9_-]{20,}['"]?'''
+tags = ["key", "payment", "API"]
+
+[[rules]]
+description = "Private Key"
+id = "private-key"
+regex = '''-----BEGIN[ A-Z]*PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+description = "Credit Card Number"
+id = "credit-card"
+regex = '''\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b'''
+tags = ["payment", "credit-card"]
+
+[[rules]]
+description = "CVV/CVC Code"
+id = "cvv-code"
+regex = '''(?i)(cvv|cvc)[_-]?[:=]\s*['"]?[0-9]{3,4}['"]?'''
+tags = ["payment", "cvv"]
+
+[allowlist]
+description = "Allowlist for test files and documentation"
+files = [
+    '''tests/.*''',
+    '''docs/.*''',
+    '''.*\.md$''',
+    '''.*\.txt$''',
+    '''\.gitleaks\.toml$'''
+]
+
+# Allowlist specific test patterns that might look like secrets
+regexes = [
+    '''test[_-]?key''',
+    '''mock[_-]?secret''',
+    '''fake[_-]?token''',
+    '''example[_-]?api[_-]?key''',
+    '''dummy[_-]?password'''
+]
