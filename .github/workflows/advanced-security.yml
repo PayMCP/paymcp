@@ -164,67 +164,44 @@ jobs:
         if [ -n "$COMPLIANCE_FILE" ] && [ -f "$COMPLIANCE_FILE" ]; then
           echo "Found compliance file: $COMPLIANCE_FILE" >> $GITHUB_OUTPUT
 
-          # Create a temporary Python script to avoid YAML quoting issues
-          cat > /tmp/parse_compliance.py << 'PYTHON_SCRIPT'
-import json
-import sys
-import os
+          # Extract values using jq or grep
+          if command -v jq >/dev/null 2>&1; then
+            SECRETS_FOUND=$(jq -r '.summary.secrets_found' "$COMPLIANCE_FILE" 2>/dev/null || echo "0")
+            PAYMENT_ISSUES=$(jq -r '.summary.payment_issues' "$COMPLIANCE_FILE" 2>/dev/null || echo "0")
+            DEPENDENCY_CHECKS=$(jq -r '.summary.dependency_checks' "$COMPLIANCE_FILE" 2>/dev/null || echo "0")
+            HIGH_SEVERITY=$(jq -r '.summary.high_severity' "$COMPLIANCE_FILE" 2>/dev/null || echo "0")
+          else
+            # Fallback to grep if jq not available
+            SECRETS_FOUND=$(grep -o '"secrets_found": *[0-9]*' "$COMPLIANCE_FILE" | grep -o '[0-9]*' || echo "0")
+            PAYMENT_ISSUES=$(grep -o '"payment_issues": *[0-9]*' "$COMPLIANCE_FILE" | grep -o '[0-9]*' || echo "0")
+            DEPENDENCY_CHECKS=$(grep -o '"dependency_checks": *[0-9]*' "$COMPLIANCE_FILE" | grep -o '[0-9]*' || echo "0")
+            HIGH_SEVERITY=$(grep -o '"high_severity": *[0-9]*' "$COMPLIANCE_FILE" | grep -o '[0-9]*' || echo "0")
+          fi
 
-compliance_file = os.environ.get('COMPLIANCE_FILE', 'compliance-scan-results.json')
+          echo "- **Secrets Found**: $SECRETS_FOUND" >> $GITHUB_OUTPUT
+          echo "- **Payment Issues**: $PAYMENT_ISSUES" >> $GITHUB_OUTPUT
+          echo "- **Dependency Checks**: $DEPENDENCY_CHECKS" >> $GITHUB_OUTPUT
+          echo "- **High Severity**: $HIGH_SEVERITY" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
 
-try:
-    with open(compliance_file) as f:
-        data = json.load(f)
+          # Show summary of findings
+          if [ "$SECRETS_FOUND" -gt "0" ]; then
+            echo "**🔑 Secrets Detected** - Check detailed compliance scan results" >> $GITHUB_OUTPUT
+          fi
 
-    summary = data['summary']
-    print(f'- **Secrets Found**: {summary["secrets_found"]}')
-    print(f'- **Payment Issues**: {summary["payment_issues"]}')
-    print(f'- **Dependency Checks**: {summary["dependency_checks"]}')
-    print(f'- **High Severity**: {summary["high_severity"]}')
-    print('')
+          if [ "$PAYMENT_ISSUES" -gt "0" ]; then
+            echo "**💳 Payment Data Issues** - Check detailed compliance scan results" >> $GITHUB_OUTPUT
+          fi
 
-    if summary['secrets_found'] > 0:
-        print('**🔑 Secrets Detected:**')
-        for secret in data['secrets'][:3]:
-            print(f'- {secret["type"]} in {secret["file"]}:{secret["line"]}')
-        if len(data['secrets']) > 3:
-            print(f'- ... and {len(data["secrets"]) - 3} more')
-        print('')
+          if [ "$DEPENDENCY_CHECKS" -gt "0" ]; then
+            echo "**📦 Dependency Issues** - Check detailed compliance scan results" >> $GITHUB_OUTPUT
+          fi
 
-    if summary['payment_issues'] > 0:
-        print('**💳 Payment Data Issues:**')
-        for issue in data['payment_data'][:3]:
-            severity = issue.get('severity', 'unknown')
-            print(f'- {issue["type"]} ({severity}) in {issue["file"]}:{issue["line"]}')
-        if len(data['payment_data']) > 3:
-            print(f'- ... and {len(data["payment_data"]) - 3} more')
-        print('')
-
-    if summary['dependency_checks'] > 0:
-        print('**📦 Dependency Issues:**')
-        for dep in data['dependencies'][:3]:
-            print(f'- {dep["message"]} in {dep["file"]}')
-        if len(data['dependencies']) > 3:
-            print(f'- ... and {len(data["dependencies"]) - 3} more')
-        print('')
-
-    if summary['high_severity'] > 0:
-        sys.exit(1)
-    elif summary['secrets_found'] > 0 or summary['payment_issues'] > 0:
-        sys.exit(2)
-    sys.exit(0)
-except Exception as e:
-    print(f'❌ Error reading compliance results: {str(e)}')
-    sys.exit(0)
-PYTHON_SCRIPT
-
-          COMPLIANCE_FILE="$COMPLIANCE_FILE" python3 /tmp/parse_compliance.py >> $GITHUB_OUTPUT
-
-          compliance_exit_code=$?
-          if [ $compliance_exit_code -eq 1 ]; then
+          # Set status based on findings
+          if [ "$HIGH_SEVERITY" -gt "0" ]; then
             echo "🚨 **CRITICAL: High-severity compliance issues detected**" >> $GITHUB_OUTPUT
             HIGH_SEVERITY_FOUND=true
-          elif [ $compliance_exit_code -eq 2 ]; then
+          elif [ "$SECRETS_FOUND" -gt "0" ] || [ "$PAYMENT_ISSUES" -gt "0" ]; then
             echo "⚠️ **Compliance warnings detected - review recommended**" >> $GITHUB_OUTPUT
           else
             echo "✅ **Compliance scan: No issues detected**" >> $GITHUB_OUTPUT
