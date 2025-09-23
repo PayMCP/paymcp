@@ -263,33 +263,64 @@ jobs:
         echo "*Security scan completed for commit ${{ github.sha }} at $(date -u)*" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
-    - name: Comment PR with security summary
+    - name: Clean up old security reports and checks
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
-          const securitySummary = `${{ steps.security_summary.outputs.SECURITY_SUMMARY }}`;
-
-          // Find and delete existing security comments
+          // Delete ALL existing security-related comments (not just bot comments)
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
           });
 
-          const botComments = comments.filter(comment =>
-            comment.user.type === 'Bot' &&
-            comment.body.includes('Security Scanning Results')
+          const securityComments = comments.filter(comment =>
+            comment.body.includes('Security Scanning Results') ||
+            comment.body.includes('Security Checks') ||
+            comment.body.includes('CodeQL') ||
+            comment.body.includes('Bandit') ||
+            comment.body.includes('Semgrep')
           );
 
           // Delete all existing security comments
-          for (const botComment of botComments) {
-            await github.rest.issues.deleteComment({
+          for (const comment of securityComments) {
+            try {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id,
+              });
+            } catch (error) {
+              console.log(`Could not delete comment ${comment.id}: ${error.message}`);
+            }
+          }
+
+          // Delete previous security check runs
+          try {
+            const { data: checkRuns } = await github.rest.checks.listForRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              comment_id: botComment.id,
+              ref: context.payload.pull_request.head.sha,
+              check_name: 'Security Scanning Quality Gate'
             });
+
+            for (const checkRun of checkRuns.check_runs) {
+              if (checkRun.status === 'completed' && checkRun.name === 'Security Scanning Quality Gate') {
+                // Note: GitHub API doesn't allow deleting check runs, but we can update them
+                console.log(`Found old check run: ${checkRun.id}`);
+              }
+            }
+          } catch (error) {
+            console.log(`Could not clean up old check runs: ${error.message}`);
           }
+
+    - name: Comment PR with security summary
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const securitySummary = `${{ steps.security_summary.outputs.SECURITY_SUMMARY }}`;
 
           // Create new comment
           await github.rest.issues.createComment({

@@ -187,33 +187,45 @@ except:
         echo "*Additional security scan completed for commit ${{ github.sha }} at $(date -u)*" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
-    - name: Comment PR with additional security summary
+    - name: Clean up old additional security reports
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
-          const additionalSecuritySummary = `${{ steps.additional_security_summary.outputs.ADDITIONAL_SECURITY_SUMMARY }}`;
-
-          // Find and delete existing additional security comments
+          // Delete ALL existing additional security-related comments
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
           });
 
-          const botComments = comments.filter(comment =>
-            comment.user.type === 'Bot' &&
-            comment.body.includes('Additional Security Checks')
+          const additionalSecurityComments = comments.filter(comment =>
+            comment.body.includes('Additional Security Checks') ||
+            comment.body.includes('Compliance Scan') ||
+            comment.body.includes('Payment Security') ||
+            comment.body.includes('GitLeaks') ||
+            comment.body.includes('PCI')
           );
 
           // Delete all existing additional security comments
-          for (const botComment of botComments) {
-            await github.rest.issues.deleteComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: botComment.id,
-            });
+          for (const comment of additionalSecurityComments) {
+            try {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id,
+              });
+            } catch (error) {
+              console.log(`Could not delete additional security comment ${comment.id}: ${error.message}`);
+            }
           }
+
+    - name: Comment PR with additional security summary
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const additionalSecuritySummary = `${{ steps.additional_security_summary.outputs.ADDITIONAL_SECURITY_SUMMARY }}`;
 
           // Create new comment
           await github.rest.issues.createComment({

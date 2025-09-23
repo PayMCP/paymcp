@@ -116,25 +116,31 @@ jobs:
           ---
           *Coverage report generated for commit ${context.sha.substring(0, 7)} at ${new Date().toISOString()}*`;
 
-          // Find and delete existing coverage comments
+          // Find and delete ALL existing coverage comments (not just bot comments)
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
           });
 
-          const botComments = comments.filter(comment =>
-            comment.user.type === 'Bot' &&
-            comment.body.includes('Coverage Report')
+          const coverageComments = comments.filter(comment =>
+            comment.body.includes('Coverage Report') ||
+            comment.body.includes('Overall Coverage') ||
+            comment.body.includes('Module Coverage') ||
+            comment.body.includes('%') && comment.body.includes('coverage')
           );
 
           // Delete all existing coverage comments
-          for (const botComment of botComments) {
-            await github.rest.issues.deleteComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: botComment.id,
-            });
+          for (const comment of coverageComments) {
+            try {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id,
+              });
+            } catch (error) {
+              console.log(`Could not delete coverage comment ${comment.id}: ${error.message}`);
+            }
           }
 
           // Create new comment
