@@ -38,7 +38,7 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        queries: security-extended,security-and-quality
+        config-file: ./.github/codeql/codeql-config.yml
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -126,6 +126,12 @@ jobs:
         echo "### Native GitHub Actions Only:" >> $GITHUB_OUTPUT
         echo "- ✅ **CodeQL Analysis** (Native GitHub SAST with security-extended queries)" >> $GITHUB_OUTPUT
         echo "- ✅ **Payment Security Assessment** (Custom compliance checks for PCI/payment data)" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "### 🔍 View Detailed Results:" >> $GITHUB_OUTPUT
+        echo "- **CodeQL Security Issues**: [Security Tab](https://github.com/${{ github.repository }}/security/code-scanning) - View specific vulnerabilities, locations, and fix recommendations" >> $GITHUB_OUTPUT
+        echo "- **Secret Scanning Alerts**: [Secret Scanning Tab](https://github.com/${{ github.repository }}/security/secret-scanning) - View detected secrets in commits" >> $GITHUB_OUTPUT
+        echo "- **Dependency Alerts**: [Dependabot Tab](https://github.com/${{ github.repository }}/security/dependabot) - View vulnerable dependencies with upgrade paths" >> $GITHUB_OUTPUT
+        echo "- **Security Overview**: [Security Tab](https://github.com/${{ github.repository }}/security) - Comprehensive security dashboard" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
         echo "### Native Features Automatically Enabled:" >> $GITHUB_OUTPUT
         echo "- 🔍 **Secret Scanning** (Automatic detection of secrets in commits)" >> $GITHUB_OUTPUT
