@@ -49,14 +49,16 @@ class TestElicitationFlow:
         assert (
             wrapper.__name__ == "test_func"
         )  # functools.wraps preserves original name
-        
-    def test_no_confirmation_tool_registered(self, mock_function, mock_mcp, mock_provider):
+
+    def test_no_confirmation_tool_registered(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test that ELICITATION flow does NOT register confirmation tools."""
         price_info = {"price": 10, "currency": "USD"}
-        
+
         # Create wrapper
         wrapper = make_paid_wrapper(mock_function, mock_mcp, mock_provider, price_info)
-        
+
         # Verify that mcp.tool was NOT called (no confirmation tool registered)
         mock_mcp.tool.assert_not_called()
 
@@ -73,9 +75,7 @@ class TestElicitationFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch(
-            "paymcp.session.manager.SessionManager.get_storage"
-        ) as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.return_value = None  # No existing session
             mock_storage.return_value = storage
@@ -105,9 +105,7 @@ class TestElicitationFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch(
-            "paymcp.session.manager.SessionManager.get_storage"
-        ) as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -117,9 +115,7 @@ class TestElicitationFlow:
 
             mock_mcp.elicit.return_value = SimpleNamespace(action="cancel")
 
-            with patch(
-                "paymcp.utils.elicitation.run_elicitation_loop"
-            ) as mock_elicit:
+            with patch("paymcp.utils.elicitation.run_elicitation_loop") as mock_elicit:
                 # Simulate user declining payment
                 mock_elicit.return_value = "canceled"
 
@@ -144,9 +140,7 @@ class TestElicitationFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch(
-            "paymcp.session.manager.SessionManager.get_storage"
-        ) as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             # Existing session
             storage.get.return_value = SessionData(
@@ -167,57 +161,57 @@ class TestElicitationFlow:
             async_func.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_elicitation_retry_with_payment_id(self, mock_function, mock_mcp, mock_provider):
+    async def test_elicitation_retry_with_payment_id(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test elicitation flow retry with existing payment_id."""
         price_info = {"price": 10, "currency": "USD"}
-        
+
         # Create async mock function
         async_func = AsyncMock(return_value="result")
         async_func.__name__ = "test_func"
-        
+
         # Payment already paid from previous attempt
         mock_provider.get_payment_status.return_value = "paid"
-        
+
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
-        
-        with patch(
-            "paymcp.session.manager.SessionManager.get_storage"
-        ) as mock_storage:
+
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             mock_storage.return_value = storage
-            
+
             # Call with payment_id from previous attempt
             result = await wrapper(ctx=mock_mcp, payment_id="payment_123")
-            
+
             # Should check status and execute immediately without creating new payment
             mock_provider.get_payment_status.assert_called_once_with("payment_123")
             mock_provider.create_payment.assert_not_called()
             assert result == "result"
             async_func.assert_called_once()
-            
+
     @pytest.mark.asyncio
-    async def test_elicitation_retry_with_canceled_payment(self, mock_function, mock_mcp, mock_provider):
+    async def test_elicitation_retry_with_canceled_payment(
+        self, mock_function, mock_mcp, mock_provider
+    ):
         """Test elicitation flow retry with canceled payment_id."""
         price_info = {"price": 10, "currency": "USD"}
-        
-        # Create async mock function  
+
+        # Create async mock function
         async_func = AsyncMock(return_value="result")
         async_func.__name__ = "test_func"
-        
+
         # Payment was canceled
         mock_provider.get_payment_status.return_value = "canceled"
-        
+
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
-        
-        with patch(
-            "paymcp.session.manager.SessionManager.get_storage"
-        ) as mock_storage:
+
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             mock_storage.return_value = storage
-            
+
             # Call with payment_id from previous attempt
             result = await wrapper(ctx=mock_mcp, payment_id="payment_123")
-            
+
             # Should return canceled status without executing
             assert result["status"] == "canceled"
             assert "Previous payment was canceled" in result["message"]
@@ -236,9 +230,7 @@ class TestElicitationFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch(
-            "paymcp.session.manager.SessionManager.get_storage"
-        ) as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
             storage = AsyncMock()
             storage.get.side_effect = Exception("Storage error")
             mock_storage.return_value = storage
@@ -260,7 +252,10 @@ class TestElicitationFlow:
         """Test that flow continues even if extract_session_id raises exception."""
         mock_provider = Mock()
         mock_provider.get_name.return_value = "test_provider"
-        mock_provider.create_payment.return_value = ("payment_123", "https://pay.test/123")
+        mock_provider.create_payment.return_value = (
+            "payment_123",
+            "https://pay.test/123",
+        )
         mock_provider.get_payment_status.return_value = "paid"
 
         # Mock MCP
@@ -275,16 +270,22 @@ class TestElicitationFlow:
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
         # Mock elicitation to immediately return paid
-        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicit:
+        with patch(
+            "paymcp.payment.flows.elicitation.run_elicitation_loop"
+        ) as mock_elicit:
             # Return immediately paid (simulating the payment was completed)
             mock_elicit.return_value = "paid"
 
             # Mock extract_session_id to raise exception
-            with patch("paymcp.payment.flows.elicitation.extract_session_id") as mock_extract:
+            with patch(
+                "paymcp.payment.flows.elicitation.extract_session_id"
+            ) as mock_extract:
                 mock_extract.side_effect = Exception("Session extraction failed")
 
                 with patch("paymcp.payment.flows.elicitation.logger") as mock_logger:
-                    with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
+                    with patch(
+                        "paymcp.session.manager.SessionManager.get_storage"
+                    ) as mock_storage:
                         storage = AsyncMock()
                         storage.get.return_value = None
                         mock_storage.return_value = storage
@@ -293,8 +294,9 @@ class TestElicitationFlow:
                         assert result == "result"
 
                         # Check that debug log was called for exception
-                        mock_logger.debug.assert_any_call("Could not extract session ID: Session extraction failed")
+                        mock_logger.debug.assert_any_call(
+                            "Could not extract session ID: Session extraction failed"
+                        )
 
                         # Function was called despite extraction error
                         async_func.assert_called_once()
-

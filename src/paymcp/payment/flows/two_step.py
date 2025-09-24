@@ -37,7 +37,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
 
         # Try to extract MCP session ID from context if available
         mcp_session_id = None
-        ctx = kwargs.get('ctx')
+        ctx = kwargs.get("ctx")
         if ctx:
             try:
                 mcp_session_id = extract_session_id(ctx)
@@ -49,7 +49,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         session_key = SessionKey(
             provider=provider_name,
             payment_id=str(payment_id),
-            mcp_session_id=mcp_session_id
+            mcp_session_id=mcp_session_id,
         )
 
         stored = await session_storage.get(session_key)
@@ -77,7 +77,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
     async def _initiate_wrapper(*args, **kwargs):
         # Try to extract MCP session ID from context if available
         mcp_session_id = None
-        ctx = kwargs.get('ctx')
+        ctx = kwargs.get("ctx")
         if ctx:
             try:
                 mcp_session_id = extract_session_id(ctx)
@@ -85,7 +85,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
                     logger.debug(f"Extracted MCP session ID: {mcp_session_id}")
             except Exception as e:
                 logger.debug(f"Could not extract session ID: {e}")
-        
+
         payment_id, payment_url = provider.create_payment(
             amount=price_info["price"],
             currency=price_info["currency"],
@@ -104,9 +104,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         pid_str = str(payment_id)
         provider_name = provider.get_name()
         session_key = SessionKey(
-            provider=provider_name, 
-            payment_id=pid_str,
-            mcp_session_id=mcp_session_id
+            provider=provider_name, payment_id=pid_str, mcp_session_id=mcp_session_id
         )
 
         # Stash original args with session storage (15 minutes TTL)
@@ -116,7 +114,9 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             provider_name=provider_name,
             metadata={"tool_name": func.__name__},
         )
-        await session_storage.set(session_key, session_data, ttl_seconds=900)  # 15 minutes TTL
+        await session_storage.set(
+            session_key, session_data, ttl_seconds=900
+        )  # 15 minutes TTL
 
         # Return data for the user / LLM
         return {

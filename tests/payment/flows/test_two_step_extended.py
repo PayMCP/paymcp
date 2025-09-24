@@ -14,7 +14,10 @@ class TestTwoStepExtended:
         """Test that initiation continues even if extract_session_id raises exception."""
         mock_provider = Mock()
         mock_provider.get_name.return_value = "test_provider"
-        mock_provider.create_payment.return_value = ("payment_123", "https://pay.test/123")
+        mock_provider.create_payment.return_value = (
+            "payment_123",
+            "https://pay.test/123",
+        )
 
         # Create async mock function
         async_func = AsyncMock(return_value="result")
@@ -31,7 +34,9 @@ class TestTwoStepExtended:
             mock_storage.return_value = storage
 
             # Mock extract_session_id to raise exception
-            with patch("paymcp.payment.flows.two_step.extract_session_id") as mock_extract:
+            with patch(
+                "paymcp.payment.flows.two_step.extract_session_id"
+            ) as mock_extract:
                 mock_extract.side_effect = Exception("Session extraction failed")
 
                 with patch("paymcp.payment.flows.two_step.logger") as mock_logger:
@@ -43,14 +48,19 @@ class TestTwoStepExtended:
                     assert "payment_url" in result
 
                     # Check that debug log was called for exception
-                    mock_logger.debug.assert_any_call("Could not extract session ID: Session extraction failed")
+                    mock_logger.debug.assert_any_call(
+                        "Could not extract session ID: Session extraction failed"
+                    )
 
     @pytest.mark.asyncio
     async def test_extract_session_id_with_value_in_initiate(self):
         """Test that extracted session ID is logged when present in initiate."""
         mock_provider = Mock()
         mock_provider.get_name.return_value = "test_provider"
-        mock_provider.create_payment.return_value = ("payment_123", "https://pay.test/123")
+        mock_provider.create_payment.return_value = (
+            "payment_123",
+            "https://pay.test/123",
+        )
 
         # Create async mock function
         async_func = AsyncMock(return_value="result")
@@ -67,7 +77,9 @@ class TestTwoStepExtended:
             mock_storage.return_value = storage
 
             # Mock extract_session_id to return a value
-            with patch("paymcp.payment.flows.two_step.extract_session_id") as mock_extract:
+            with patch(
+                "paymcp.payment.flows.two_step.extract_session_id"
+            ) as mock_extract:
                 mock_extract.return_value = "session-123"
 
                 with patch("paymcp.payment.flows.two_step.logger") as mock_logger:
@@ -79,4 +91,6 @@ class TestTwoStepExtended:
                     assert "payment_url" in result
 
                     # Check that debug log was called with session ID
-                    mock_logger.debug.assert_any_call("Extracted MCP session ID: session-123")
+                    mock_logger.debug.assert_any_call(
+                        "Extracted MCP session ID: session-123"
+                    )

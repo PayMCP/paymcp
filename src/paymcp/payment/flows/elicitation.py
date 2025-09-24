@@ -40,20 +40,35 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         # Check if there's a payment_id in kwargs (retry scenario)
         retry_payment_id = kwargs.get("_payment_id") or kwargs.get("payment_id")
         if retry_payment_id:
-            logger.debug(f"[make_paid_wrapper] Retry detected for payment_id={retry_payment_id}")
+            logger.debug(
+                f"[make_paid_wrapper] Retry detected for payment_id={retry_payment_id}"
+            )
             # Check payment status for retry
             try:
                 status = provider.get_payment_status(retry_payment_id)
                 if status == "paid":
-                    logger.info(f"[make_paid_wrapper] Payment {retry_payment_id} already paid, executing tool")
+                    logger.info(
+                        f"[make_paid_wrapper] Payment {retry_payment_id} already paid, executing tool"
+                    )
                     # Remove payment_id from kwargs before calling original function
-                    clean_kwargs = {k: v for k, v in kwargs.items() if k not in ["_payment_id", "payment_id"]}
+                    clean_kwargs = {
+                        k: v
+                        for k, v in kwargs.items()
+                        if k not in ["_payment_id", "payment_id"]
+                    }
                     return await func(*args, **clean_kwargs)
                 elif status == "canceled":
-                    logger.info(f"[make_paid_wrapper] Payment {retry_payment_id} was canceled")
-                    return {"status": "canceled", "message": "Previous payment was canceled"}
+                    logger.info(
+                        f"[make_paid_wrapper] Payment {retry_payment_id} was canceled"
+                    )
+                    return {
+                        "status": "canceled",
+                        "message": "Previous payment was canceled",
+                    }
             except Exception as e:
-                logger.warning(f"[make_paid_wrapper] Could not check retry payment status: {e}")
+                logger.warning(
+                    f"[make_paid_wrapper] Could not check retry payment status: {e}"
+                )
                 # Continue with new payment
 
         # 1. Initiate payment
@@ -68,9 +83,9 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         # But NOT for a confirmation tool - just for potential retry
         provider_name = provider.get_name()
         session_key = SessionKey(
-            provider=provider_name, 
+            provider=provider_name,
             payment_id=str(payment_id),
-            mcp_session_id=mcp_session_id
+            mcp_session_id=mcp_session_id,
         )
         session_data = SessionData(
             args={"args": args, "kwargs": kwargs},
@@ -78,8 +93,12 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             provider_name=provider_name,
             metadata={"tool_name": func.__name__, "for_retry": True},
         )
-        await session_storage.set(session_key, session_data, ttl_seconds=300)  # 5 minute TTL for retries
-        logger.debug(f"[make_paid_wrapper] Stored session for potential retry of payment_id={payment_id}")
+        await session_storage.set(
+            session_key, session_data, ttl_seconds=300
+        )  # 5 minute TTL for retries
+        logger.debug(
+            f"[make_paid_wrapper] Stored session for potential retry of payment_id={payment_id}"
+        )
 
         if open_payment_webview_if_available(payment_url):
             message = opened_webview_message(

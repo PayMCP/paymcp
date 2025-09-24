@@ -13,6 +13,7 @@ class SessionKey:
     Note: HTTP transport should provide Mcp-Session-Id header per MCP spec.
     If missing, falls back to provider:paymentId (less isolation between clients).
     """
+
     provider: str
     payment_id: str
     mcp_session_id: Optional[str] = None  # MCP session ID (HTTP) - optional for STDIO
