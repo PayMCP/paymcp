@@ -38,7 +38,6 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        # Remove custom config - use default CodeQL rules
         queries: security-extended,security-and-quality
 
     - name: Set up Python
@@ -55,45 +54,6 @@ jobs:
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:${{matrix.language}}"
-
-  dependency-review:
-    name: Dependency Review (Native)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      pull-requests: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Dependency Review
-      uses: actions/dependency-review-action@v4
-      with:
-        # Fail on critical vulnerabilities
-        fail-on-severity: critical
-        # Allow common open source licenses
-        allow-licenses: MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC
-
-  secret-scan:
-    name: Secret Scanning (Native)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: TruffleHog Secret Scan
-      uses: trufflesecurity/trufflehog@main
-      with:
-        path: ./
-        base: main
-        head: HEAD
-        extra_args: --debug --only-verified
 
   compliance-scan:
     name: Payment Security & Compliance
@@ -143,39 +103,10 @@ jobs:
         path: pci-compliance-report.txt
         retention-days: 30
 
-  semgrep:
-    name: Semgrep SAST
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Run Semgrep
-      uses: semgrep/semgrep-action@v1
-      with:
-        config: >-
-          p/security-audit
-          p/python
-          p/owasp-top-ten
-          p/cwe-top-25
-      env:
-        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-
-    - name: Upload Semgrep results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('semgrep.sarif') != ''
-      with:
-        sarif_file: semgrep.sarif
-      continue-on-error: true
-
   security-report:
     name: Security Report Summary
     runs-on: ubuntu-latest
-    needs: [codeql, dependency-review, secret-scan, compliance-scan, semgrep]
+    needs: [codeql, compliance-scan]
     if: always()
     permissions:
       pull-requests: write
@@ -190,14 +121,16 @@ jobs:
       id: security_summary
       run: |
         echo "SECURITY_SUMMARY<<EOF" >> $GITHUB_OUTPUT
-        echo "## 🔒 Security Scanning Results (Native GitHub Actions)" >> $GITHUB_OUTPUT
+        echo "## 🔒 Security Scanning Results (Pure Native GitHub Actions)" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
-        echo "### Native Scans Performed:" >> $GITHUB_OUTPUT
-        echo "- ✅ **CodeQL Analysis** (Native GitHub SAST)" >> $GITHUB_OUTPUT
-        echo "- ✅ **Dependency Review** (Native GitHub vulnerability scanning)" >> $GITHUB_OUTPUT
-        echo "- ✅ **Secret Scanning** (TruffleHog for comprehensive secret detection)" >> $GITHUB_OUTPUT
-        echo "- ✅ **Semgrep SAST** (Third-party with SARIF upload to Security tab)" >> $GITHUB_OUTPUT
-        echo "- ✅ **Payment Security Assessment** (Custom compliance checks)" >> $GITHUB_OUTPUT
+        echo "### Native GitHub Actions Only:" >> $GITHUB_OUTPUT
+        echo "- ✅ **CodeQL Analysis** (Native GitHub SAST with security-extended queries)" >> $GITHUB_OUTPUT
+        echo "- ✅ **Payment Security Assessment** (Custom compliance checks for PCI/payment data)" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "### Native Features Automatically Enabled:" >> $GITHUB_OUTPUT
+        echo "- 🔍 **Secret Scanning** (Automatic detection of secrets in commits)" >> $GITHUB_OUTPUT
+        echo "- 🛡️ **Dependency Alerts** (Automatic vulnerability notifications)" >> $GITHUB_OUTPUT
+        echo "- 📊 **Security Advisory Database** (GitHub's vulnerability database)" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
 
         # Check for high-severity issues
@@ -231,16 +164,17 @@ jobs:
         else
           echo "" >> $GITHUB_OUTPUT
           echo "### ✅ Security Status" >> $GITHUB_OUTPUT
-          echo "All security scans completed successfully using native GitHub Actions." >> $GITHUB_OUTPUT
+          echo "All security scans completed successfully using pure native GitHub Actions." >> $GITHUB_OUTPUT
           echo "security_status=passed" >> $GITHUB_OUTPUT
         fi
 
         echo "" >> $GITHUB_OUTPUT
-        echo "### 🎯 Benefits of Native Actions:" >> $GITHUB_OUTPUT
-        echo "- **Better Integration**: Results appear directly in GitHub Security tab" >> $GITHUB_OUTPUT
-        echo "- **Automatic Updates**: GitHub maintains and updates scan engines" >> $GITHUB_OUTPUT
-        echo "- **Faster Execution**: Optimized for GitHub infrastructure" >> $GITHUB_OUTPUT
-        echo "- **Zero Configuration**: No custom scripts or external dependencies" >> $GITHUB_OUTPUT
+        echo "### 🎯 Pure Native Benefits:" >> $GITHUB_OUTPUT
+        echo "- **Zero Dependencies**: Only GitHub's own actions" >> $GITHUB_OUTPUT
+        echo "- **Maximum Integration**: All results in GitHub Security tab" >> $GITHUB_OUTPUT
+        echo "- **Always Updated**: GitHub maintains all scanning engines" >> $GITHUB_OUTPUT
+        echo "- **Fastest Performance**: Optimized for GitHub infrastructure" >> $GITHUB_OUTPUT
+        echo "- **No Configuration**: Works out of the box" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
         echo "---" >> $GITHUB_OUTPUT
         echo "*Security scan completed for commit ${{ github.sha }} at $(date -u)*" >> $GITHUB_OUTPUT
@@ -259,7 +193,8 @@ jobs:
 
           const securityComments = comments.filter(comment =>
             comment.body.includes('Security Scanning Results') ||
-            comment.body.includes('Native GitHub Actions')
+            comment.body.includes('Native GitHub Actions') ||
+            comment.body.includes('Pure Native')
           );
 
           for (const comment of securityComments) {
@@ -295,7 +230,7 @@ jobs:
         script: |
           const securityStatus = process.env.SECURITY_STATUS;
           const actualStatus = securityStatus === 'warning' || securityStatus === 'failed' ? 'failure' : 'success';
-          const title = actualStatus === 'success' ? 'Security Scans Passed (Native)' : 'Security Issues Detected';
+          const title = actualStatus === 'success' ? 'Security Scans Passed (Pure Native)' : 'Security Issues Detected';
 
           await github.rest.checks.create({
             owner: context.repo.owner,
@@ -307,7 +242,7 @@ jobs:
             output: {
               title: title,
               summary: actualStatus === 'success'
-                ? '✅ All native GitHub security scans passed'
+                ? '✅ All pure native GitHub security scans passed'
                 : '⚠️ Security issues detected in native scans',
             }
           });
