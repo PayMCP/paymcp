@@ -128,15 +128,20 @@ jobs:
         echo "- ✅ **Payment Security Assessment** (Custom compliance checks for PCI/payment data)" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
         echo "### 🔍 View Detailed Results:" >> $GITHUB_OUTPUT
-        echo "- **CodeQL Security Issues**: [Security Tab](https://github.com/${{ github.repository }}/security/code-scanning) - View specific vulnerabilities, locations, and fix recommendations" >> $GITHUB_OUTPUT
-        echo "- **Secret Scanning Alerts**: [Secret Scanning Tab](https://github.com/${{ github.repository }}/security/secret-scanning) - View detected secrets in commits" >> $GITHUB_OUTPUT
-        echo "- **Dependency Alerts**: [Dependabot Tab](https://github.com/${{ github.repository }}/security/dependabot) - View vulnerable dependencies with upgrade paths" >> $GITHUB_OUTPUT
-        echo "- **Security Overview**: [Security Tab](https://github.com/${{ github.repository }}/security) - Comprehensive security dashboard" >> $GITHUB_OUTPUT
+        echo "- **CodeQL Security Issues**: Navigate to Repository → Security tab → Code scanning (after scan completes)" >> $GITHUB_OUTPUT
+        echo "- **Security Overview**: [Security Tab](https://github.com/${{ github.repository }}/security) - Main security dashboard" >> $GITHUB_OUTPUT
+        echo "- **Actions Results**: Check the [Actions tab](https://github.com/${{ github.repository }}/actions) for detailed scan logs" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
-        echo "### Native Features Automatically Enabled:" >> $GITHUB_OUTPUT
-        echo "- 🔍 **Secret Scanning** (Automatic detection of secrets in commits)" >> $GITHUB_OUTPUT
-        echo "- 🛡️ **Dependency Alerts** (Automatic vulnerability notifications)" >> $GITHUB_OUTPUT
-        echo "- 📊 **Security Advisory Database** (GitHub's vulnerability database)" >> $GITHUB_OUTPUT
+        echo "### 📍 How to View CodeQL Issues:" >> $GITHUB_OUTPUT
+        echo "1. Go to your repository on GitHub" >> $GITHUB_OUTPUT
+        echo "2. Click the **Security** tab" >> $GITHUB_OUTPUT
+        echo "3. Look for **Code scanning alerts** section" >> $GITHUB_OUTPUT
+        echo "4. Each alert shows: file location, line numbers, severity, and fix guidance" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "### Native Features (Public Repository):" >> $GITHUB_OUTPUT
+        echo "- 🔍 **CodeQL Analysis** - Static application security testing with detailed issue reporting" >> $GITHUB_OUTPUT
+        echo "- 🛡️ **Dependency Graph** - Automatic dependency tracking and vulnerability alerts" >> $GITHUB_OUTPUT
+        echo "- 📊 **Security Advisory Database** - GitHub's comprehensive vulnerability database" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
 
         # Check for high-severity issues
