@@ -4,6 +4,7 @@ from typing import Dict, Any
 from ...utils.messages import open_link_message, opened_webview_message
 from ..webview import open_payment_webview_if_available
 from ...session import SessionManager, SessionKey, SessionData
+from ...utils.session import extract_session_id
 import logging
 import time
 
@@ -30,10 +31,26 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         name=confirm_tool_name,
         description=f"Confirm payment and execute {func.__name__}()",
     )
-    async def _confirm_tool(payment_id: str):
+    async def _confirm_tool(payment_id: str, **kwargs):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
         provider_name = provider.get_name()
-        session_key = SessionKey(provider=provider_name, payment_id=str(payment_id))
+
+        # Try to extract MCP session ID from context if available
+        mcp_session_id = None
+        ctx = kwargs.get('ctx')
+        if ctx:
+            try:
+                mcp_session_id = extract_session_id(ctx)
+                if mcp_session_id:
+                    logger.debug(f"Extracted MCP session ID: {mcp_session_id}")
+            except Exception as e:
+                logger.debug(f"Could not extract session ID: {e}")
+
+        session_key = SessionKey(
+            provider=provider_name,
+            payment_id=str(payment_id),
+            mcp_session_id=mcp_session_id
+        )
 
         stored = await session_storage.get(session_key)
         logger.debug(
@@ -58,6 +75,17 @@ def make_paid_wrapper(func, mcp, provider, price_info):
     # --- Step 1: payment initiation -------------------------------------------
     @functools.wraps(func)
     async def _initiate_wrapper(*args, **kwargs):
+        # Try to extract MCP session ID from context if available
+        mcp_session_id = None
+        ctx = kwargs.get('ctx')
+        if ctx:
+            try:
+                mcp_session_id = extract_session_id(ctx)
+                if mcp_session_id:
+                    logger.debug(f"Extracted MCP session ID: {mcp_session_id}")
+            except Exception as e:
+                logger.debug(f"Could not extract session ID: {e}")
+        
         payment_id, payment_url = provider.create_payment(
             amount=price_info["price"],
             currency=price_info["currency"],
@@ -75,7 +103,11 @@ def make_paid_wrapper(func, mcp, provider, price_info):
 
         pid_str = str(payment_id)
         provider_name = provider.get_name()
-        session_key = SessionKey(provider=provider_name, payment_id=pid_str)
+        session_key = SessionKey(
+            provider=provider_name, 
+            payment_id=pid_str,
+            mcp_session_id=mcp_session_id
+        )
 
         # Stash original args with session storage (15 minutes TTL)
         session_data = SessionData(
@@ -84,7 +116,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             provider_name=provider_name,
             metadata={"tool_name": func.__name__},
         )
-        await session_storage.set(session_key, session_data, 900)  # 15 minutes TTL
+        await session_storage.set(session_key, session_data, ttl_seconds=900)  # 15 minutes TTL
 
         # Return data for the user / LLM
         return {

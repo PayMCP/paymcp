@@ -154,18 +154,23 @@ class TestSessionPersistenceAllFlows:
                         )
                         payment_id = result["payment_id"]
 
-        # Verify response contains pending status and confirmation tool
+        # Verify response contains pending status and payment details
         assert result["status"] == "pending"
         assert "payment_id" in result
         assert "payment_url" in result
 
-        # For non-TWO_STEP flows, verify next_step points to confirmation tool
-        if flow != PaymentFlow.TWO_STEP:
+        # TWO_STEP flow still has next_step (confirmation tool)
+        # ELICITATION and PROGRESS flows no longer have next_step
+        if flow == PaymentFlow.TWO_STEP:
+            assert "next_step" in result
             assert result["next_step"] == f"confirm_{mock_func.__name__}_payment"
+        else:
+            # ELICITATION and PROGRESS don't add confirmation tools anymore
+            assert "next_step" not in result
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "flow", [PaymentFlow.TWO_STEP, PaymentFlow.ELICITATION, PaymentFlow.PROGRESS]
+        "flow", [PaymentFlow.TWO_STEP]  # Only TWO_STEP has confirmation tools now
     )
     async def test_confirmation_tool_with_session(
         self, flow, mock_mcp, mock_func, mock_ctx
@@ -173,24 +178,20 @@ class TestSessionPersistenceAllFlows:
         """Test that confirmation tool correctly retrieves and uses stored session"""
         provider = MockProvider(name="test_provider")
 
-        # Get wrapper and confirmation tool
-        if flow == PaymentFlow.TWO_STEP:
-            wrapper = two_step.make_paid_wrapper(
-                mock_func, mock_mcp, provider, PRICE_INFO
-            )
-        elif flow == PaymentFlow.ELICITATION:
-            wrapper = elicitation.make_paid_wrapper(
-                mock_func, mock_mcp, provider, PRICE_INFO
-            )
-        elif flow == PaymentFlow.PROGRESS:
-            wrapper = progress.make_paid_wrapper(
-                mock_func, mock_mcp, provider, PRICE_INFO
-            )
-
-        confirm_tool = mock_mcp.registered_tools.get(
-            f"confirm_{mock_func.__name__}_payment"
+        # Get wrapper and confirmation tool (only for TWO_STEP)
+        wrapper = two_step.make_paid_wrapper(
+            mock_func, mock_mcp, provider, PRICE_INFO
         )
-        assert confirm_tool is not None
+
+        # Only TWO_STEP has confirmation tools now
+        if flow == PaymentFlow.TWO_STEP:
+            confirm_tool = mock_mcp.registered_tools.get(
+                f"confirm_{mock_func.__name__}_payment"
+            )
+            assert confirm_tool is not None
+        else:
+            # ELICITATION and PROGRESS don't have confirmation tools
+            confirm_tool = None
 
         # Create payment and mark as paid
         payment_id = f"{provider.name}_{PAYMENT_ID}"
@@ -219,7 +220,7 @@ class TestSessionPersistenceAllFlows:
             )
             mock_storage.delete = AsyncMock()
 
-            # Call confirmation tool
+            # Call confirmation tool (only exists for TWO_STEP)
             result = await confirm_tool(payment_id=payment_id)
 
             # Verify function was called with stored args
@@ -231,6 +232,41 @@ class TestSessionPersistenceAllFlows:
             session_key = mock_storage.delete.call_args[0][0]
             assert session_key.provider == provider.name
             assert session_key.payment_id == payment_id
+            
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "flow", [PaymentFlow.ELICITATION, PaymentFlow.PROGRESS]
+    )
+    async def test_retry_with_payment_id(
+        self, flow, mock_mcp, mock_func, mock_ctx
+    ):
+        """Test that ELICITATION and PROGRESS flows support retry with payment_id"""
+        provider = MockProvider(name="test_provider")
+        
+        # Pre-create a paid payment
+        payment_id = f"{provider.name}_{PAYMENT_ID}"
+        provider.payments[payment_id] = {
+            "status": "paid",
+            "amount": 0.05,
+            "currency": "USD",
+        }
+        
+        # Get wrapper based on flow
+        if flow == PaymentFlow.ELICITATION:
+            wrapper = elicitation.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
+        elif flow == PaymentFlow.PROGRESS:
+            wrapper = progress.make_paid_wrapper(
+                mock_func, mock_mcp, provider, PRICE_INFO
+            )
+        
+        # Call wrapper with payment_id to trigger retry logic
+        result = await wrapper(ctx=mock_ctx, payment_id=payment_id)
+        
+        # Verify function was called directly (payment already paid)
+        mock_func.assert_called_once()
+        assert result == {"result": "success", "data": "test_data"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("flow", [PaymentFlow.ELICITATION, PaymentFlow.PROGRESS])
@@ -452,20 +488,12 @@ class TestProviderIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "provider_name,flow",
+        "provider_name, flow",
         [
             ("stripe", PaymentFlow.TWO_STEP),
-            ("stripe", PaymentFlow.ELICITATION),
-            ("stripe", PaymentFlow.PROGRESS),
             ("paypal", PaymentFlow.TWO_STEP),
-            ("paypal", PaymentFlow.ELICITATION),
-            ("paypal", PaymentFlow.PROGRESS),
             ("square", PaymentFlow.TWO_STEP),
-            ("square", PaymentFlow.ELICITATION),
-            ("square", PaymentFlow.PROGRESS),
             ("walleot", PaymentFlow.TWO_STEP),
-            ("walleot", PaymentFlow.ELICITATION),
-            ("walleot", PaymentFlow.PROGRESS),
         ],
     )
     async def test_provider_with_session(
@@ -489,10 +517,15 @@ class TestProviderIntegration:
             )
 
         # Verify confirmation tool is registered
-        confirm_tool = mock_mcp.registered_tools.get(
-            f"confirm_{mock_func.__name__}_payment"
-        )
-        assert confirm_tool is not None
+        # Only TWO_STEP has confirmation tools now
+        if flow == PaymentFlow.TWO_STEP:
+            confirm_tool = mock_mcp.registered_tools.get(
+                f"confirm_{mock_func.__name__}_payment"
+            )
+            assert confirm_tool is not None
+        else:
+            # ELICITATION and PROGRESS don't have confirmation tools
+            confirm_tool = None
 
         # Create and mark payment as paid
         payment_id = f"{provider_name}_{PAYMENT_ID}"
@@ -538,52 +571,50 @@ class TestDelayedPayment:
             name="test_provider", payment_delay=10
         )  # 10 second delay
 
-        # Test PROGRESS flow with delayed payment
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            with patch("paymcp.payment.flows.progress.MAX_WAIT_SECONDS", 0.1):
-                with patch("paymcp.payment.flows.progress.DEFAULT_POLL_SECONDS", 0.01):
-                    wrapper = progress.make_paid_wrapper(
-                        mock_func, mock_mcp, provider, PRICE_INFO
-                    )
+        # Test TWO_STEP flow with delayed payment
+        wrapper = two_step.make_paid_wrapper(
+            mock_func, mock_mcp, provider, PRICE_INFO
+        )
 
-                    # First call - payment will timeout
-                    result = await wrapper("delayed_arg", ctx=mock_ctx)
-                    assert result["status"] == "pending"
-                    payment_id = result["payment_id"]
+        # First call - initiate payment
+        result = await wrapper("delayed_arg", ctx=mock_ctx)
+        assert result["status"] == "pending"
+        payment_id = result["payment_id"]
+        
+        # Simulate time passing and payment completing
+        provider.payments[payment_id][
+            "created_at"
+        ] -= 20  # Simulate 20 seconds passed
 
-                    # Simulate time passing and payment completing
-                    provider.payments[payment_id][
-                        "created_at"
-                    ] -= 20  # Simulate 20 seconds passed
+        # Now confirm payment
+        confirm_tool = mock_mcp.registered_tools.get(
+            f"confirm_{mock_func.__name__}_payment"
+        )
+        assert confirm_tool is not None
 
-                    # Now confirm payment
-                    confirm_tool = mock_mcp.registered_tools.get(
-                        f"confirm_{mock_func.__name__}_payment"
-                    )
+        with patch(
+            "paymcp.payment.flows.two_step.session_storage"
+        ) as mock_storage:
+            mock_storage.get = AsyncMock(
+                return_value=SessionData(
+                    args={
+                        "args": ("delayed_arg",),
+                        "kwargs": {"ctx": mock_ctx},
+                    },
+                    ts=int(time.time() * 1000),
+                )
+            )
+            mock_storage.delete = AsyncMock()
 
-                    with patch(
-                        "paymcp.payment.flows.progress.session_storage"
-                    ) as mock_storage:
-                        mock_storage.get = AsyncMock(
-                            return_value=SessionData(
-                                args={
-                                    "args": ("delayed_arg",),
-                                    "kwargs": {"ctx": mock_ctx},
-                                },
-                                ts=int(time.time() * 1000),
-                            )
-                        )
-                        mock_storage.delete = AsyncMock()
+            # Payment should now be marked as paid
+            assert provider.get_payment_status(payment_id) == "paid"
 
-                        # Payment should now be marked as paid
-                        assert provider.get_payment_status(payment_id) == "paid"
+            # Confirm payment
+            result = await confirm_tool(payment_id=payment_id)
 
-                        # Confirm payment
-                        result = await confirm_tool(payment_id=payment_id)
-
-                        # Verify function was called with original args
-                        mock_func.assert_called_once_with("delayed_arg", ctx=mock_ctx)
-                        assert result == {"result": "success", "data": "test_data"}
+            # Verify function was called with original args
+            mock_func.assert_called_once_with("delayed_arg", ctx=mock_ctx)
+            assert result == {"result": "success", "data": "test_data"}
 
 
 if __name__ == "__main__":

@@ -47,6 +47,16 @@ class TestProgressFlow:
         assert (
             wrapper.__name__ == "test_func"
         )  # functools.wraps preserves original name
+        
+    def test_no_confirmation_tool_registered(self, mock_function, mock_mcp, mock_provider):
+        """Test that PROGRESS flow does NOT register confirmation tools."""
+        price_info = {"price": 10, "currency": "USD"}
+        
+        # Create wrapper
+        wrapper = make_paid_wrapper(mock_function, mock_mcp, mock_provider, price_info)
+        
+        # Verify that mcp.tool was NOT called (no confirmation tool registered)
+        mock_mcp.tool.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_progress_monitoring_flow(
@@ -61,7 +71,8 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             storage = AsyncMock()
             storage.get.return_value = None  # No existing session
             mock_storage.return_value = storage
@@ -89,7 +100,8 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             storage = AsyncMock()
             # Existing paid session
             from paymcp.session.types import SessionData
@@ -122,7 +134,8 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(slow_func, mock_mcp, mock_provider, price_info)
 
-        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -153,7 +166,8 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -168,6 +182,65 @@ class TestProgressFlow:
             assert "Payment canceled" in result["message"]
 
     @pytest.mark.asyncio
+    async def test_progress_retry_with_payment_id(self, mock_function, mock_mcp, mock_provider):
+        """Test progress flow retry with existing payment_id."""
+        price_info = {"price": 10, "currency": "USD"}
+        
+        # Create async mock function
+        async_func = AsyncMock(return_value="result")
+        async_func.__name__ = "test_func"
+        
+        # Payment already paid from previous attempt
+        mock_provider.get_payment_status.return_value = "paid"
+        
+        wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
+        
+        with patch(
+            "paymcp.session.manager.SessionManager.get_storage"
+        ) as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            storage = AsyncMock()
+            mock_storage.return_value = storage
+
+            # Call with payment_id from previous attempt
+            result = await wrapper(ctx=mock_mcp, payment_id="payment_123")
+
+            # Should check status and execute immediately without creating new payment
+            mock_provider.get_payment_status.assert_called_once_with("payment_123")
+            mock_provider.create_payment.assert_not_called()
+            assert result == "result"
+            async_func.assert_called_once()
+            
+    @pytest.mark.asyncio
+    async def test_progress_retry_with_canceled_payment(self, mock_function, mock_mcp, mock_provider):
+        """Test progress flow retry with canceled payment_id."""
+        price_info = {"price": 10, "currency": "USD"}
+        
+        # Create async mock function  
+        async_func = AsyncMock(return_value="result")
+        async_func.__name__ = "test_func"
+        
+        # Payment was canceled
+        mock_provider.get_payment_status.return_value = "canceled"
+        
+        wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
+        
+        with patch(
+            "paymcp.session.manager.SessionManager.get_storage"
+        ) as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            storage = AsyncMock()
+            mock_storage.return_value = storage
+
+            # Call with payment_id from previous attempt
+            result = await wrapper(ctx=mock_mcp, payment_id="payment_123")
+
+            # Should return canceled status without executing
+            assert result["status"] == "canceled"
+            assert "Previous payment was canceled" in result["message"]
+            async_func.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_progress_monitoring_error_handling(
         self, mock_function, mock_mcp, mock_provider
     ):
@@ -180,7 +253,8 @@ class TestProgressFlow:
 
         wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
 
-        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage:
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             storage = AsyncMock()
             storage.get.return_value = None
             mock_storage.return_value = storage
@@ -188,7 +262,104 @@ class TestProgressFlow:
             # Test error handling during progress polling
             mock_provider.get_payment_status.side_effect = Exception("Provider error")
 
-            with patch("src.paymcp.payment.flows.progress.logger") as mock_logger:
+            with patch("paymcp.payment.flows.progress.logger") as mock_logger:
                 # Progress flow should handle provider errors gracefully
                 with pytest.raises(Exception, match="Provider error"):
                     await wrapper(ctx=mock_mcp)
+
+    @pytest.mark.asyncio
+    async def test_progress_extract_session_id_exception(self):
+        """Test that flow continues even if extract_session_id raises exception."""
+        mock_provider = Mock()
+        mock_provider.get_name.return_value = "test_provider"
+        mock_provider.create_payment.return_value = ("payment_123", "https://pay.test/123")
+        mock_provider.get_payment_status.return_value = "paid"
+
+        # Mock the async function
+        async_func = AsyncMock(return_value="result")
+        async_func.__name__ = "test_func"
+
+        price_info = {"price": 10.0, "currency": "USD"}
+        mock_mcp = Mock()
+        mock_mcp.report_progress = AsyncMock()
+
+        wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
+
+        # Mock extract_session_id to raise exception
+        with patch("paymcp.payment.flows.progress.extract_session_id") as mock_extract:
+            mock_extract.side_effect = Exception("Session extraction failed")
+
+            with patch("paymcp.payment.flows.progress.logger") as mock_logger:
+                with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+                     patch("asyncio.sleep", new_callable=AsyncMock):
+                    storage = AsyncMock()
+                    storage.get.return_value = None
+                    mock_storage.return_value = storage
+
+                    result = await wrapper(ctx=mock_mcp)
+                    assert result == "result"
+
+                    # Check that debug log was called for exception
+                    mock_logger.debug.assert_any_call("Could not extract session ID: Session extraction failed")
+
+    @pytest.mark.asyncio
+    async def test_progress_extract_session_id_with_value(self):
+        """Test that extracted session ID is logged when present."""
+        mock_provider = Mock()
+        mock_provider.get_name.return_value = "test_provider"
+        mock_provider.create_payment.return_value = ("payment_123", "https://pay.test/123")
+        mock_provider.get_payment_status.return_value = "paid"
+
+        # Mock the async function
+        async_func = AsyncMock(return_value="result")
+        async_func.__name__ = "test_func"
+
+        price_info = {"price": 10.0, "currency": "USD"}
+        mock_mcp = Mock()
+        mock_mcp.report_progress = AsyncMock()
+
+        wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
+
+        # Mock extract_session_id to return a value
+        with patch("paymcp.payment.flows.progress.extract_session_id") as mock_extract:
+            mock_extract.return_value = "session-123"
+
+            with patch("paymcp.payment.flows.progress.logger") as mock_logger:
+                with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+                     patch("asyncio.sleep", new_callable=AsyncMock):
+                    storage = AsyncMock()
+                    storage.get.return_value = None
+                    mock_storage.return_value = storage
+
+                    result = await wrapper(ctx=mock_mcp)
+                    assert result == "result"
+
+                    # Check that debug log was called with session ID
+                    mock_logger.debug.assert_any_call("Extracted MCP session ID: session-123")
+
+    @pytest.mark.asyncio
+    async def test_progress_no_report_progress_attribute(self):
+        """Test that flow works even if ctx has no report_progress."""
+        mock_provider = Mock()
+        mock_provider.get_name.return_value = "test_provider"
+        mock_provider.create_payment.return_value = ("payment_123", "https://pay.test/123")
+        mock_provider.get_payment_status.return_value = "paid"
+
+        # Mock the async function
+        async_func = AsyncMock(return_value="result")
+        async_func.__name__ = "test_func"
+
+        price_info = {"price": 10.0, "currency": "USD"}
+        mock_mcp = Mock(spec=[])  # Mock with no report_progress attribute
+
+        wrapper = make_paid_wrapper(async_func, mock_mcp, mock_provider, price_info)
+
+        with patch("paymcp.session.manager.SessionManager.get_storage") as mock_storage, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            storage = AsyncMock()
+            storage.get.return_value = None
+            mock_storage.return_value = storage
+
+            # Should work without errors
+            result = await wrapper(ctx=mock_mcp)
+            assert result == "result"

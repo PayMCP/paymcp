@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from paymcp.session.types import SessionKey, SessionData
 from paymcp.session.memory import InMemorySessionStorage
@@ -77,17 +77,17 @@ class TestInMemorySessionStorage:
     @pytest.mark.asyncio
     async def test_ttl_expiration(self, storage, sample_key, sample_data):
         """Test session expiration with TTL."""
-        # Set with 1 second TTL
-        await storage.set(sample_key, sample_data, ttl_seconds=1)
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            # Set with 1 second TTL
+            await storage.set(sample_key, sample_data, ttl_seconds=1)
 
-        # Should exist immediately
-        assert await storage.has(sample_key) is True
+            # Should exist immediately
+            assert await storage.has(sample_key) is True
 
-        # Wait for expiration
-        await asyncio.sleep(1.5)
-
-        # Should be expired
-        assert await storage.has(sample_key) is False
+            # Mock time to simulate expiration instead of real sleep
+            with patch("time.time", return_value=time.time() + 2):
+                # Should be expired
+                assert await storage.has(sample_key) is False
 
     @pytest.mark.asyncio
     async def test_no_ttl_persistence(self, storage, sample_key, sample_data):
@@ -146,25 +146,25 @@ class TestInMemorySessionStorage:
     @pytest.mark.asyncio
     async def test_cleanup_expired_sessions(self, storage):
         """Test cleanup removes only expired sessions."""
-        expired_key = SessionKey(provider="stripe", payment_id="expired")
-        valid_key = SessionKey(provider="stripe", payment_id="valid")
-        permanent_key = SessionKey(provider="stripe", payment_id="permanent")
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            expired_key = SessionKey(provider="stripe", payment_id="expired")
+            valid_key = SessionKey(provider="stripe", payment_id="valid")
+            permanent_key = SessionKey(provider="stripe", payment_id="permanent")
 
-        data = SessionData(args={}, ts=int(time.time() * 1000))
+            data = SessionData(args={}, ts=int(time.time() * 1000))
 
-        # Set with different TTLs
-        await storage.set(expired_key, data, ttl_seconds=0.1)
-        await storage.set(valid_key, data, ttl_seconds=100)
-        await storage.set(permanent_key, data)  # No TTL
+            # Set with different TTLs
+            await storage.set(expired_key, data, ttl_seconds=0.1)
+            await storage.set(valid_key, data, ttl_seconds=100)
+            await storage.set(permanent_key, data)  # No TTL
 
-        # Wait for first to expire
-        await asyncio.sleep(0.2)
+            # Mock time to simulate expiration instead of real sleep
+            with patch("time.time", return_value=time.time() + 1):
+                await storage.cleanup()
 
-        await storage.cleanup()
-
-        assert await storage.has(expired_key) is False
-        assert await storage.has(valid_key) is True
-        assert await storage.has(permanent_key) is True
+                assert await storage.has(expired_key) is False
+                assert await storage.has(valid_key) is True
+                assert await storage.has(permanent_key) is True
 
     @pytest.mark.asyncio
     async def test_cleanup_task_lifecycle(self, storage):

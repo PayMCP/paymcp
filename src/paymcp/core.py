@@ -2,6 +2,7 @@
 from enum import Enum
 from .providers import build_providers
 from .utils.messages import description_with_price
+from .utils.session import extract_session_id
 from .payment.flows import make_flow
 from .payment.payment_flow import PaymentFlow
 from importlib.metadata import version, PackageNotFoundError
@@ -21,12 +22,15 @@ class PayMCP:
         mcp_instance,
         providers=None,
         payment_flow: PaymentFlow = PaymentFlow.TWO_STEP,
+        session_id_extractor=None,
     ):
         logger.debug(f"PayMCP v{__version__}")
         flow_name = payment_flow.value
         self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
+        # Use provided extractor or default to our implementation
+        self.session_id_extractor = session_id_extractor or extract_session_id
         self._patch_tool()
 
     def _patch_tool(self):

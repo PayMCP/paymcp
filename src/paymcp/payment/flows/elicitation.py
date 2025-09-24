@@ -6,6 +6,7 @@ from ..webview import open_payment_webview_if_available
 import logging
 from ...utils.elicitation import run_elicitation_loop
 from ...session import SessionManager, SessionKey, SessionData
+from ...utils.session import extract_session_id
 
 logger = logging.getLogger(__name__)
 
@@ -16,45 +17,44 @@ session_storage = SessionManager.get_storage()
 def make_paid_wrapper(func, mcp, provider, price_info):
     """
     Single-step payment flow using elicitation during execution.
-    Now with session support for handling timeouts.
+    Uses elicitation to handle payment confirmation without adding tools.
+    Session storage provides recovery mechanism for timeouts.
     """
 
-    confirm_tool_name = f"confirm_{func.__name__}_payment"
-
-    # Register confirmation tool (like TWO_STEP)
-    @mcp.tool(
-        name=confirm_tool_name,
-        description=f"Confirm payment and execute {func.__name__}() after elicitation timeout",
-    )
-    async def _confirm_tool(payment_id: str):
-        logger.info(f"[elicitation_confirm_tool] Received payment_id={payment_id}")
-        provider_name = provider.get_name()
-        session_key = SessionKey(provider=provider_name, payment_id=str(payment_id))
-
-        stored = await session_storage.get(session_key)
-        logger.debug(
-            f"[elicitation_confirm_tool] Looking up session with provider={provider_name} payment_id={payment_id}"
-        )
-
-        if stored is None:
-            raise RuntimeError("Unknown or expired payment_id")
-
-        status = provider.get_payment_status(payment_id)
-        if status != "paid":
-            raise RuntimeError(f"Payment status is {status}, expected 'paid'")
-        logger.debug(
-            f"[elicitation_confirm_tool] Calling {func.__name__} with stored args"
-        )
-
-        await session_storage.delete(session_key)
-        stored_args = stored.args.get("args", ())
-        stored_kwargs = stored.args.get("kwargs", {})
-        return await func(*stored_args, **stored_kwargs)
+    # No tool registration here - pure elicitation flow
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         ctx = kwargs.get("ctx", None)
         logger.debug(f"[make_paid_wrapper] Starting tool: {func.__name__}")
+
+        # Try to extract MCP session ID from context if available
+        mcp_session_id = None
+        if ctx:
+            try:
+                mcp_session_id = extract_session_id(ctx)
+                logger.debug(f"Extracted MCP session ID: {mcp_session_id}")
+            except Exception as e:
+                logger.debug(f"Could not extract session ID: {e}")
+
+        # Check if there's a payment_id in kwargs (retry scenario)
+        retry_payment_id = kwargs.get("_payment_id") or kwargs.get("payment_id")
+        if retry_payment_id:
+            logger.debug(f"[make_paid_wrapper] Retry detected for payment_id={retry_payment_id}")
+            # Check payment status for retry
+            try:
+                status = provider.get_payment_status(retry_payment_id)
+                if status == "paid":
+                    logger.info(f"[make_paid_wrapper] Payment {retry_payment_id} already paid, executing tool")
+                    # Remove payment_id from kwargs before calling original function
+                    clean_kwargs = {k: v for k, v in kwargs.items() if k not in ["_payment_id", "payment_id"]}
+                    return await func(*args, **clean_kwargs)
+                elif status == "canceled":
+                    logger.info(f"[make_paid_wrapper] Payment {retry_payment_id} was canceled")
+                    return {"status": "canceled", "message": "Previous payment was canceled"}
+            except Exception as e:
+                logger.warning(f"[make_paid_wrapper] Could not check retry payment status: {e}")
+                # Continue with new payment
 
         # 1. Initiate payment
         payment_id, payment_url = provider.create_payment(
@@ -64,16 +64,22 @@ def make_paid_wrapper(func, mcp, provider, price_info):
         )
         logger.debug(f"[make_paid_wrapper] Created payment with ID: {payment_id}")
 
-        # Store session for later confirmation (in case of timeout)
+        # Store session for recovery (if client needs to retry after timeout)
+        # But NOT for a confirmation tool - just for potential retry
         provider_name = provider.get_name()
-        session_key = SessionKey(provider=provider_name, payment_id=str(payment_id))
+        session_key = SessionKey(
+            provider=provider_name, 
+            payment_id=str(payment_id),
+            mcp_session_id=mcp_session_id
+        )
         session_data = SessionData(
             args={"args": args, "kwargs": kwargs},
             ts=int(time.time() * 1000),
             provider_name=provider_name,
+            metadata={"tool_name": func.__name__, "for_retry": True},
         )
-        await session_storage.set(session_key, session_data)
-        logger.debug(f"[make_paid_wrapper] Stored session for payment_id={payment_id}")
+        await session_storage.set(session_key, session_data, ttl_seconds=300)  # 5 minute TTL for retries
+        logger.debug(f"[make_paid_wrapper] Stored session for potential retry of payment_id={payment_id}")
 
         if open_payment_webview_if_available(payment_url):
             message = opened_webview_message(
@@ -110,13 +116,14 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             return {"status": "canceled", "message": "Payment canceled by user"}
         else:
             logger.info(f"[make_paid_wrapper] Payment not received after retries")
-            # Session remains for later confirmation
+            # Return pending status WITHOUT a tool reference
+            # Client can retry the original tool if needed
             return {
                 "status": "pending",
-                "message": "We haven't received the payment yet. Click the button below to check again.",
-                "next_step": confirm_tool_name,  # Use confirmation tool
+                "message": "Payment pending. Please complete payment and try the tool again.",
                 "payment_id": str(payment_id),
                 "payment_url": payment_url,
+                # No next_step tool - client retries original tool
             }
 
     return wrapper
