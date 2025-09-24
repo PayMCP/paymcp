@@ -73,8 +73,8 @@ jobs:
       with:
         # Fail on critical vulnerabilities
         fail-on-severity: critical
-        # Allow dependencies with known vulnerabilities if they have patches
-        allow-dependencies-licenses: MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC
+        # Allow common open source licenses
+        allow-licenses: MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC
 
   secret-scan:
     name: Secret Scanning (Native)
@@ -162,11 +162,12 @@ jobs:
           p/python
           p/owasp-top-ten
           p/cwe-top-25
-        generateSarif: "1"
+      env:
+        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
     - name: Upload Semgrep results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('semgrep.sarif') != ''
       with:
         sarif_file: semgrep.sarif
       continue-on-error: true
