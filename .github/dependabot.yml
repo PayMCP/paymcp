@@ -1,0 +1,91 @@
+# Dependabot configuration for automated dependency updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Python dependencies via pip (PDM uses pip under the hood)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    # Group patch and minor updates to reduce noise
+    groups:
+      production-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "pytest*"
+          - "coverage*"
+          - "*-dev"
+        update-types:
+          - "minor"
+          - "patch"
+      development-dependencies:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+          - "*-dev"
+        update-types:
+          - "minor"
+          - "patch"
+    # Limit number of open PRs
+    open-pull-requests-limit: 5
+    # Add reviewers - customize for your team
+    reviewers:
+      - "PayMCP/core-team"  # Replace with actual team/users
+    # Add labels
+    labels:
+      - "dependencies"
+      - "python"
+    # Allow up to patch version updates for security
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    # Commit message preferences
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    # Group all GitHub Actions updates
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 2
+    # Add reviewers - customize for your team
+    reviewers:
+      - "PayMCP/core-team"  # Replace with actual team/users
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Optional: Docker dependencies (if you have Dockerfile)
+  # - package-ecosystem: "docker"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #     day: "monday"
+  #     time: "04:00"
+  #     timezone: "UTC"
+  #   open-pull-requests-limit: 2
+  #   labels:
+  #     - "dependencies"
+  #     - "docker"

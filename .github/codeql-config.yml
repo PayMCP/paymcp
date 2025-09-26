@@ -1,0 +1,89 @@
+# CodeQL configuration file
+# https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning
+
+name: "CodeQL config for PayMCP"
+
+# Disable default queries and use specific query suites
+disable-default-queries: false
+
+# Additional query suites to run
+queries:
+  - name: security-and-quality
+    uses: security-and-quality
+  - name: security-extended
+    uses: security-extended
+
+# Paths to include in analysis
+paths:
+  - src/
+  - tests/
+
+# Paths to exclude from analysis (customize based on your project)
+paths-ignore:
+  # Generated files
+  - "**/__pycache__/"
+  - "**/*.pyc"
+  - "**/*.pyo"
+  - "**/*.pyd"
+  - ".pdm-python"
+
+  # Build and distribution directories
+  - "build/"
+  - "dist/"
+  - "*.egg-info/"
+
+  # Virtual environments
+  - "venv/"
+  - ".venv/"
+  - "env/"
+  - ".env/"
+
+  # Cache directories
+  - ".pytest_cache/"
+  - ".coverage"
+  - "htmlcov/"
+  - ".tox/"
+  - ".mypy_cache/"
+
+  # IDE and editor files
+  - ".vscode/"
+  - ".idea/"
+  - "*.swp"
+  - "*.swo"
+  - "*~"
+
+  # Documentation build files (if using Sphinx/MkDocs)
+  - "docs/_build/"
+  - "site/"
+
+  # Configuration files that might contain secrets (analyze separately)
+  - "*.env*"
+  - "secrets.yml"
+  - "secrets.yaml"
+
+  # Third-party vendored code (if any)
+  - "vendor/"
+  - "third_party/"
+
+# Configure specific languages
+python:
+  # Python-specific configuration
+  version: "3.10"  # Match your project's Python version
+
+  # Include/exclude specific patterns for Python
+  queries:
+    - include:
+        kind: problem
+        tags: security
+    - include:
+        kind: problem
+        tags: correctness
+    - exclude:
+        id: py/unused-import  # Example: exclude specific rules if needed
+
+# Custom query filters (optional)
+query-filters:
+  # Exclude specific vulnerability types if they're false positives
+  # - exclude:
+  #     id: py/sql-injection
+  #     reason: "We use parameterized queries exclusively"

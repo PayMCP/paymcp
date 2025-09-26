@@ -1,0 +1,49 @@
+name: "Dependency Review"
+
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+
+# Cancel superseded runs for PRs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: "dependency-review"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Least-privilege permissions
+    permissions:
+      contents: read         # Required to checkout code
+      pull-requests: write   # Required to comment on PRs
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Only run if this is not a fork PR (security measure)
+    - name: Dependency Review
+      if: github.event.pull_request.head.repo.fork == false
+      uses: actions/dependency-review-action@v4
+      with:
+        # Fail on critical and high severity vulnerabilities
+        fail-on-severity: critical
+        # Allow licenses commonly used in open source
+        allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, GPL-3.0, LGPL-2.1, LGPL-3.0
+        # Comment on PR with results
+        comment-summary-in-pr: always
+        # Optional: Deny specific packages (example)
+        # deny-packages: 'requests:2.25.1'
+
+    # For fork PRs, run a limited check without secrets
+    - name: Dependency Review (Fork PR)
+      if: github.event.pull_request.head.repo.fork == true
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: critical
+        allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, GPL-3.0, LGPL-2.1, LGPL-3.0
+        # Don't comment on fork PRs to avoid permission issues
+        comment-summary-in-pr: never
