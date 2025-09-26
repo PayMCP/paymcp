@@ -51,15 +51,50 @@ Initialize `PayMCP`:
 ```python
 from mcp.server.fastmcp import FastMCP, Context
 from paymcp import PayMCP, price, PaymentFlow
+import os
 
 mcp = FastMCP("AI agent name")
 PayMCP(
     mcp,  # your FastMCP instance
     providers={
-        "provider_name": {"apiKey": "your-api-key-here"},
+        "stripe": {"apiKey": os.getenv("STRIPE_API_KEY")},
     },
-    payment_flow=PaymentFlow.ELICITATION
+    payment_flow=PaymentFlow.TWO_STEP #or ELICITATION / PROGRESS
 )
+```
+
+### Providers: alternative styles (optional)
+
+**Instances instead of config (advanced):**
+```python
+import os
+from paymcp.providers import WalleotProvider, StripeProvider
+
+PayMCP(
+    mcp,
+    providers=[
+        WalleotProvider(api_key=os.getenv("WALLEOT_API_KEY")),
+        CoinbaseProvider(api_key=os.getenv("COINBASE_API_KEY")),
+    ],
+)
+# Note: right now the first configured provider is used.
+```
+
+**Custom provider (minimal):**  
+Any provider must subclass `BasePaymentProvider` and implement `create_payment(...)` and `get_payment_status(...)`.
+```python
+from paymcp.providers import BasePaymentProvider
+
+class MyProvider(BasePaymentProvider):
+
+    def create_payment(self, amount: float, currency: str, description: str):
+        # Return (payment_id, payment_url)
+        return "unique-payment-id", "https://example.com/pay"
+
+    def get_payment_status(self, payment_id: str) -> str:
+        return "paid"
+
+PayMCP(mcp, providers=[MyProvider(api_key="...")])
 ```
 
 Use the `@price` decorator on any tool:
