@@ -1,4 +1,5 @@
-def open_link_message(url, amount, currency):
+def open_link_message(url, amount, currency, payment_id=None):
+    """Generate message for payment link."""
     return (
         f"To run this tool, please pay {amount} {currency} using the link below:\n\n"
         f"{url}\n\n"
@@ -6,7 +7,8 @@ def open_link_message(url, amount, currency):
     )
 
 
-def opened_webview_message(url, amount, currency):
+def opened_webview_message(url, amount, currency, payment_id=None):
+    """Generate message for opened webview."""
     return (
         f"To run this tool, please pay {amount} {currency}.\n"
         "A payment window should be open. If not, you can use this link:\n\n"

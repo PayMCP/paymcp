@@ -21,16 +21,12 @@ class SessionKey:
     def to_str(self) -> str:
         """Generate storage key based on available identifiers.
 
-        - With session ID: mcp:{sessionId}:{paymentId} (proper client isolation)
-        - Without session ID: {provider}:{paymentId} (STDIO or degraded HTTP)
+        Always uses {provider}:{paymentId} for simplicity and recovery.
+        This allows any client to recover a payment by knowing the payment_id.
         """
-        if self.mcp_session_id:
-            # HTTP transport with proper MCP session ID
-            return f"mcp:{self.mcp_session_id}:{self.payment_id}"
-        else:
-            # STDIO transport or HTTP without session ID
-            # Warning: In HTTP mode without session ID, different clients may conflict
-            return f"{self.provider}:{self.payment_id}"
+        # Always use provider:payment_id for simplicity
+        # This allows recovery after timeout without needing session ID
+        return f"{self.provider}:{self.payment_id}"
 
 
 @dataclass
