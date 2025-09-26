@@ -13,7 +13,6 @@ __all__ = [
     "PayPalProvider",
     "SquareProvider",
     "CoinbaseProvider",
-    "build_providers",
 ]
 
 from typing import Any, Iterable, Mapping, Type, Dict, Optional
