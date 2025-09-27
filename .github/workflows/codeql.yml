@@ -1,0 +1,71 @@
+name: "CodeQL Security Analysis"
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+  schedule:
+    # Run weekly on Sundays at 00:00 UTC
+    - cron: '0 0 * * 0'
+
+# Cancel superseded runs for PRs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: "CodeQL / Analyze (python)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    # Least-privilege permissions
+    permissions:
+      security-events: write  # Required to upload SARIF results
+      contents: read         # Required to checkout code
+      actions: read          # Required for private repos
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Customize this list based on your project languages
+        # Available languages: c-cpp, csharp, go, java-kotlin, javascript-typescript, python, ruby, swift
+        language: [ 'python' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        # Optional: Use custom config file to exclude generated/vendor code
+        # config-file: ./.github/codeql-config.yml
+        # Optional: Override default queries with security-and-quality suite
+        queries: security-and-quality
+
+    # Set up Python environment for better analysis
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'  # Match your project's minimum Python version
+
+    # Install dependencies for better CodeQL analysis
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pdm
+        pdm install --dev
+
+    # Autobuild for Python projects
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+        # Upload SARIF results even if there are errors
+        upload: true

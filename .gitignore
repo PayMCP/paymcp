@@ -162,3 +162,8 @@ cython_debug/
 #.idea/
 
 temp.py
+
+# Security and compliance scan results
+compliance-scan-results.json
+security-scan-results.json
+*.sarif
