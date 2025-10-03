@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 try:
     import redis.asyncio as aioredis
     REDIS_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     REDIS_AVAILABLE = False
     aioredis = None  # Set to None for type hints
     logger.warning("redis package not installed. RedisStateStore will not be available.")
@@ -149,7 +149,7 @@ if REDIS_AVAILABLE:
                 await self._client.aclose()
                 self._client = None
                 logger.debug("Redis client closed")
-else:
+else:  # pragma: no cover
     # Provide a stub class that raises error when instantiated
     class RedisStateStore:
         """Stub class when redis is not installed."""

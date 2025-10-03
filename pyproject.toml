@@ -26,6 +26,16 @@ build-backend = "pdm.backend"
 [tool.pdm]
 distribution = true
 
-[tool.pdm.package-dir]  
-"" = "src" 
+[tool.pdm.package-dir]
+"" = "src"
 
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "except PackageNotFoundError:",  # Version detection fallback
+]

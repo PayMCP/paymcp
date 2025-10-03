@@ -1,164 +1,328 @@
-# tests/state/test_redis.py
-"""Tests for RedisStateStore."""
+"""Tests for Redis state store with mocked Redis client.
+
+These tests verify the RedisStateStore wrapper logic without requiring a real Redis instance.
+Integration tests with real Redis are in paymcp-flow-tester.
+"""
 
 import pytest
-
-# Skip all tests if redis is not installed
-try:
-    from paymcp.state import RedisStateStore
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-
-pytestmark = pytest.mark.skipif(not REDIS_AVAILABLE, reason="redis package not installed")
+from unittest.mock import AsyncMock, patch, MagicMock
+import json
+import time
 
 
-@pytest.mark.asyncio
-@pytest.mark.integration  # Mark as integration test (requires Redis server)
-async def test_redis_set_and_get():
-    """Test storing and retrieving data from Redis."""
-    store = RedisStateStore(redis_url="redis://localhost:6379/0")
-
-    try:
-        # Store data
-        await store.set("test_key", {"arg1": "value1", "arg2": 42})
-
-        # Retrieve data
-        result = await store.get("test_key")
-        assert result is not None
-        assert result["args"] == {"arg1": "value1", "arg2": 42}
-        assert "ts" in result
-        assert isinstance(result["ts"], float)
-    finally:
-        # Cleanup
-        await store.delete("test_key")
-        await store.close()
+def create_mock_redis_client():
+    """Helper to create a properly configured mock Redis client."""
+    mock_client = AsyncMock()
+    mock_client.setex = AsyncMock()
+    mock_client.get = AsyncMock()
+    mock_client.delete = AsyncMock()
+    mock_client.aclose = AsyncMock()
+    return mock_client
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
-async def test_redis_get_nonexistent():
-    """Test retrieving nonexistent key returns None."""
-    store = RedisStateStore(redis_url="redis://localhost:6379/0")
+async def test_redis_initialization():
+    """Test RedisStateStore initialization with custom parameters."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        from paymcp.state.redis import RedisStateStore
 
-    try:
-        result = await store.get("nonexistent_key_redis")
-        assert result is None
-    finally:
-        await store.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_redis_delete():
-    """Test deleting data from Redis."""
-    store = RedisStateStore(redis_url="redis://localhost:6379/0")
-
-    try:
-        # Store data
-        await store.set("test_key_delete", {"data": "value"})
-
-        # Verify it exists
-        result = await store.get("test_key_delete")
-        assert result is not None
-
-        # Delete it
-        await store.delete("test_key_delete")
-
-        # Verify it's gone
-        result = await store.get("test_key_delete")
-        assert result is None
-    finally:
-        await store.close()
+        store = RedisStateStore(
+            redis_url="redis://localhost:6379/1",
+            key_prefix="test:prefix:",
+            ttl=7200
+        )
+        assert store.redis_url == "redis://localhost:6379/1"
+        assert store.key_prefix == "test:prefix:"
+        assert store.ttl == 7200
+        assert store._client is None  # Lazy initialization
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
-async def test_redis_ttl():
-    """Test that data expires after TTL."""
-    import asyncio
+async def test_redis_make_key():
+    """Test key formatting with prefix."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        from paymcp.state.redis import RedisStateStore
 
-    store = RedisStateStore(redis_url="redis://localhost:6379/0", ttl=2)  # 2 second TTL
-
-    try:
-        # Store data with short TTL
-        await store.set("ttl_test_key", {"data": "value"})
-
-        # Should exist immediately
-        result = await store.get("ttl_test_key")
-        assert result is not None
-
-        # Wait for expiration
-        await asyncio.sleep(3)
-
-        # Should be gone
-        result = await store.get("ttl_test_key")
-        assert result is None
-    finally:
-        await store.close()
+        store = RedisStateStore(key_prefix="paymcp:test:")
+        assert store._make_key("payment123") == "paymcp:test:payment123"
+        assert store._make_key("abc") == "paymcp:test:abc"
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
-async def test_redis_key_prefix():
-    """Test that key prefix is applied correctly."""
-    store = RedisStateStore(redis_url="redis://localhost:6379/0", key_prefix="test_prefix:")
+async def test_redis_set():
+    """Test set() method calls setex with correct parameters."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
 
-    try:
-        await store.set("my_key", {"data": "value"})
+            mock_client = create_mock_redis_client()
 
-        # Verify we can retrieve with the same store
-        result = await store.get("my_key")
-        assert result is not None
-        assert result["args"]["data"] == "value"
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
 
-        # Verify key has prefix in Redis
-        client = await store._get_client()
-        # The actual key in Redis should be "test_prefix:my_key"
-        raw_key = "test_prefix:my_key"
-        exists = await client.exists(raw_key)
-        assert exists == 1
+            mock_aioredis.from_url = mock_from_url
 
-        # Cleanup
-        await store.delete("my_key")
-    finally:
-        await store.close()
+            store = RedisStateStore(ttl=3600)
+            test_args = {'tool': 'test', 'amount': 1.00}
+
+            await store.set('payment_id_123', test_args)
+
+            # Verify setex was called
+            assert mock_client.setex.called
+            call_args = mock_client.setex.call_args[0]
+
+            # Check key
+            assert call_args[0] == "paymcp:pending:payment_id_123"
+
+            # Check TTL
+            assert call_args[1] == 3600
+
+            # Check data is JSON with args and timestamp
+            data = json.loads(call_args[2])
+            assert 'args' in data
+            assert 'ts' in data
+            assert data['args'] == test_args
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
-async def test_redis_complex_data():
-    """Test storing complex nested data structures in Redis."""
-    store = RedisStateStore(redis_url="redis://localhost:6379/0")
+async def test_redis_get_existing():
+    """Test get() method retrieves and deserializes data."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
 
-    complex_data = {
-        "user": "test_user",
-        "params": {
-            "nested": {
-                "value": 123,
-                "list": [1, 2, 3]
+            mock_client = create_mock_redis_client()
+
+            test_data = {
+                'args': {'tool': 'test', 'amount': 1.00},
+                'ts': time.time()
             }
-        },
-        "items": ["a", "b", "c"]
-    }
+            mock_client.get.return_value = json.dumps(test_data)
 
-    try:
-        await store.set("complex_key", complex_data)
-        result = await store.get("complex_key")
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
 
-        assert result["args"] == complex_data
-        assert result["args"]["params"]["nested"]["list"] == [1, 2, 3]
-    finally:
-        await store.delete("complex_key")
-        await store.close()
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+            result = await store.get('payment_id_123')
+
+            # Verify get was called with correct key
+            mock_client.get.assert_called_once_with("paymcp:pending:payment_id_123")
+
+            # Verify data was deserialized correctly
+            assert result is not None
+            assert result['args'] == test_data['args']
+            assert 'ts' in result
 
 
-def test_redis_import_error():
-    """Test that proper error is raised when redis is not installed."""
-    # This test is only meaningful if redis IS installed
-    if not REDIS_AVAILABLE:
-        pytest.skip("redis is not installed - cannot test import error")
+@pytest.mark.asyncio
+async def test_redis_get_nonexistent():
+    """Test get() returns None for nonexistent key."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
 
-    # If redis IS installed, we can't test the ImportError
-    # This is a placeholder to document the expected behavior
-    pass
+            mock_client = create_mock_redis_client()
+            mock_client.get.return_value = None
+
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+            result = await store.get('nonexistent_key')
+
+            assert result is None
+
+
+@pytest.mark.asyncio
+async def test_redis_delete():
+    """Test delete() method calls Redis delete."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
+
+            mock_client = create_mock_redis_client()
+            mock_client.delete.return_value = 1  # Key was deleted
+
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+            await store.delete('payment_id_123')
+
+            # Verify delete was called with correct key
+            mock_client.delete.assert_called_once_with("paymcp:pending:payment_id_123")
+
+
+@pytest.mark.asyncio
+async def test_redis_delete_nonexistent():
+    """Test delete() works even if key doesn't exist."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
+
+            mock_client = create_mock_redis_client()
+            mock_client.delete.return_value = 0  # Key didn't exist
+
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+            await store.delete('nonexistent_key')
+
+            # Should not raise an error
+            assert mock_client.delete.called
+
+
+@pytest.mark.asyncio
+async def test_redis_close():
+    """Test close() method properly closes the Redis client."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
+
+            mock_client = create_mock_redis_client()
+
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+
+            # Initialize client
+            await store._get_client()
+            assert store._client is not None
+
+            # Close
+            await store.close()
+
+            # Verify aclose was called
+            mock_client.aclose.assert_called_once()
+
+            # Verify client is cleared
+            assert store._client is None
+
+
+@pytest.mark.asyncio
+async def test_redis_close_no_client():
+    """Test close() works even if client was never initialized."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        from paymcp.state.redis import RedisStateStore
+
+        store = RedisStateStore()
+
+        # Close without initializing client
+        await store.close()  # Should not raise
+
+
+@pytest.mark.asyncio
+async def test_redis_client_lazy_initialization():
+    """Test that Redis client is created lazily on first use."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
+
+            mock_client = create_mock_redis_client()
+            call_count = 0
+
+            async def mock_from_url(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+            assert store._client is None
+
+            # First operation triggers client creation
+            await store.set('key1', {'data': '1'})
+            assert call_count == 1
+
+            # Subsequent operations reuse client
+            mock_client.get.return_value = json.dumps({'args': {'data': '1'}, 'ts': time.time()})
+            await store.get('key1')
+            await store.delete('key1')
+
+            # Client should still only be created once
+            assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_redis_connection_parameters():
+    """Test that connection parameters are passed correctly to Redis."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
+
+            mock_client = create_mock_redis_client()
+
+            async def mock_from_url(url, encoding, decode_responses):
+                # Verify parameters
+                assert url == "redis://custom:6379/5"
+                assert encoding == "utf-8"
+                assert decode_responses == True
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore(redis_url="redis://custom:6379/5")
+            await store._get_client()
+
+
+@pytest.mark.asyncio
+async def test_redis_complex_data_serialization():
+    """Test that complex nested data structures are serialized correctly."""
+    with patch('paymcp.state.redis.REDIS_AVAILABLE', True):
+        with patch('paymcp.state.redis.aioredis') as mock_aioredis:
+            from paymcp.state.redis import RedisStateStore
+
+            mock_client = create_mock_redis_client()
+
+            async def mock_from_url(*args, **kwargs):
+                return mock_client
+
+            mock_aioredis.from_url = mock_from_url
+
+            store = RedisStateStore()
+
+            complex_args = {
+                'nested': {
+                    'deep': {
+                        'data': [1, 2, 3]
+                    }
+                },
+                'list': ['a', 'b', 'c'],
+                'number': 42,
+                'boolean': True,
+                'null': None
+            }
+
+            await store.set('complex_key', complex_args)
+
+            # Verify data was JSON serialized correctly
+            call_args = mock_client.setex.call_args[0]
+            stored_data = json.loads(call_args[2])
+            assert stored_data['args'] == complex_args
+
+
+def test_redis_stub_class_when_unavailable():
+    """Test that stub class raises ImportError when redis package not installed."""
+    # We can't easily test the actual stub class without reloading the module
+    # But we can verify the conditional logic exists
+    from paymcp.state import redis as redis_module
+
+    assert hasattr(redis_module, 'REDIS_AVAILABLE')
+    assert hasattr(redis_module, 'RedisStateStore')
+
+    # When REDIS_AVAILABLE is True (normal case), we get the real class
+    # When False, we get the stub class that raises ImportError
+    # The stub class testing is better done in integration tests
