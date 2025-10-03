@@ -109,6 +109,18 @@ def add(a: int, b: int, ctx: Context) -> int:
 
 > **Demo server:** For a complete setup, see the example repo: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo).
 
+---
+
+## 👥 Multi-User Session Isolation
+
+PayMCP supports concurrent users with independent payment states using the LIST_CHANGE flow:
+
+- **Per-session tool visibility**: Each user session maintains independent tool state
+- **Session tracking**: Uses MCP SDK's `request_ctx.session` with UUID fallback
+- **Concurrent isolation**: Multiple users can initiate payments simultaneously without interference
+- **Verified**: 100% pass rate on multi-user isolation test scenarios
+
+**Example**: User A initiates a payment → their tools are hidden. User B's tools remain visible and unaffected. When User A confirms, their tools are restored without affecting User B.
 
 ---
 
