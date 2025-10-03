@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.0
+### Added
+- **Pluggable state storage** for TWO_STEP flow: Introduced StateStore protocol with multiple backend implementations
+  - `InMemoryStateStore`: Default in-memory storage (backward compatible, process-local)
+  - `RedisStateStore`: Production-ready distributed state storage using Redis
+  - Supports horizontal scaling with shared state across multiple server instances
+  - Optional dependency: `pip install paymcp[redis]` for Redis support
+  - Configurable TTL, key prefixes, and connection URLs
+  - Graceful fallback when redis package not installed
+
+### Changed
+- TWO_STEP flow now uses StateStore abstraction instead of module-level PENDING_ARGS dict
+- PayMCP class accepts optional `state_store` parameter (defaults to InMemoryStateStore)
+- Flow factory intelligently passes `state_store` only to flows that support it
+
+### Technical Details
+- Redis implementation uses async redis client with proper connection lifecycle
+- TTL default: 3600 seconds (1 hour) for pending payment data
+- Key format: `paymcp:pending:{payment_id}`
+- Zero breaking changes - existing code works without modifications
+
 ## 0.2.1
 ### Fixed
 - **Multi-user session isolation** in LIST_CHANGE flow: Fixed per-session tool visibility to properly isolate concurrent users
