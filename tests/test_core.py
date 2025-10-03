@@ -84,7 +84,11 @@ class TestPayMCP:
             payment_flow=PaymentFlow.PROGRESS,
         )
 
-        mock_make_flow.assert_called_once_with("progress")
+        # Verify make_flow was called with flow name and state_store
+        assert mock_make_flow.call_count == 1
+        call_args = mock_make_flow.call_args
+        assert call_args[0][0] == "progress"  # First positional arg is flow name
+        assert "state_store" in call_args[1]  # state_store should be in kwargs
         assert paymcp._wrapper_factory == mock_wrapper
 
     def test_decorated_tool_with_price(self, mock_mcp_instance):

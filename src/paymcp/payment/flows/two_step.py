@@ -1,15 +1,17 @@
 # paymcp/payment/flows/two_step.py
 import functools
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from ...utils.messages import open_link_message, opened_webview_message
 from ..webview import open_payment_webview_if_available
+from ...state import StateStore, InMemoryStateStore
 import logging
 logger = logging.getLogger(__name__)
 
-PENDING_ARGS: Dict[str, Dict[str, Any]] = {} #TODO redis?
+# Default in-memory store (can be overridden with state_store parameter)
+_default_state_store: Optional[StateStore] = None
 
 
-def make_paid_wrapper(func, mcp, provider, price_info):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store: Optional[StateStore] = None):
     """
     Implements the two‑step payment flow:
 
@@ -17,23 +19,42 @@ def make_paid_wrapper(func, mcp, provider, price_info):
        `payment_url` and `payment_id` to the client.
     2. A dynamically registered tool `confirm_<tool>` waits for payment,
        validates it, and only then calls the original function.
+
+    Args:
+        func: The original tool function to wrap
+        mcp: MCP server instance
+        provider: Payment provider instance
+        price_info: Dictionary with 'price' and 'currency' keys
+        state_store: Optional StateStore for persisting pending args (defaults to InMemoryStateStore)
     """
+    # Initialize state store if not provided
+    global _default_state_store
+    if state_store is None:
+        if _default_state_store is None:
+            _default_state_store = InMemoryStateStore()
+        state_store = _default_state_store
 
     confirm_tool_name = f"confirm_{func.__name__}_payment"
 
-    # --- Step 2: payment confirmation -----------------------------------------
+    # --- Step 2: payment confirmation -----------------------------------------
     @mcp.tool(
         name=confirm_tool_name,
         description=f"Confirm payment and execute {func.__name__}()"
     )
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
-        original_args = PENDING_ARGS.get(str(payment_id), None)
-        logger.debug(f"[confirm_tool] PENDING_ARGS keys: {list(PENDING_ARGS.keys())}")
-        logger.debug(f"[confirm_tool] Retrieved args: {original_args}")
-        if original_args is None:
+
+        # Retrieve from state store
+        stored_data = await state_store.get(str(payment_id))
+        logger.debug(f"[confirm_tool] Retrieved data: {stored_data}")
+
+        if stored_data is None:
             raise RuntimeError("Unknown or expired payment_id")
-        
+
+        original_args = stored_data.get('args')
+        if original_args is None:
+            raise RuntimeError("Invalid stored data for payment_id")
+
         status = provider.get_payment_status(payment_id)
         if status != "paid":
             raise RuntimeError(
@@ -41,12 +62,13 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             )
         logger.debug(f"[confirm_tool] Calling {func.__name__} with args: {original_args}")
 
-        del PENDING_ARGS[str(payment_id)]
+        # Delete from state store
+        await state_store.delete(str(payment_id))
 
         # Call the original tool with its initial arguments
         return await func(**original_args)
 
-    # --- Step 1: payment initiation -------------------------------------------
+    # --- Step 1: payment initiation -------------------------------------------
     @functools.wraps(func)
     async def _initiate_wrapper(*args, **kwargs):
         payment_id, payment_url = provider.create_payment(
@@ -65,7 +87,8 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             )
 
         pid_str = str(payment_id)
-        PENDING_ARGS[pid_str] = kwargs
+        # Store args in state store
+        await state_store.set(pid_str, kwargs)
 
         # Return data for the user / LLM
         return {

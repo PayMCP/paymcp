@@ -13,6 +13,7 @@ license = {text = "MIT"}
 
 [project.optional-dependencies]
 webview = ["pywebview>=4.0"]        # pip/pdm install paymcp[webview]
+redis = ["redis>=5.0.0"]            # pip/pdm install paymcp[redis]
 
 [tool.pdm.dev-dependencies]
 test = ["pytest", "pytest-asyncio", "pytest-cov"]

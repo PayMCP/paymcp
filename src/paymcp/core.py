@@ -1,9 +1,11 @@
 # paymcp/core.py
 from enum import Enum
+from typing import Optional
 from .providers import build_providers
 from .utils.messages import description_with_price
 from .payment.flows import make_flow
 from .payment.payment_flow import PaymentFlow
+from .state import StateStore, InMemoryStateStore
 from importlib.metadata import version, PackageNotFoundError
 import logging
 logger = logging.getLogger(__name__)
@@ -14,13 +16,36 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 class PayMCP:
-    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP):
+    def __init__(
+        self,
+        mcp_instance,
+        providers=None,
+        payment_flow: PaymentFlow = PaymentFlow.TWO_STEP,
+        state_store: Optional[StateStore] = None
+    ):
+        """
+        Initialize PayMCP with payment provider(s) and flow configuration.
+
+        Args:
+            mcp_instance: FastMCP server instance
+            providers: Payment provider configuration dict or list of provider instances
+            payment_flow: Payment flow type (default: TWO_STEP)
+            state_store: Optional StateStore for persistent state (default: InMemoryStateStore)
+                        Only used by TWO_STEP flow currently.
+        """
         logger.debug(f"PayMCP v{__version__}")
         flow_name = payment_flow.value
-        self._wrapper_factory = make_flow(flow_name)
+
+        # Use provided state_store or default to InMemoryStateStore
+        if state_store is None:
+            state_store = InMemoryStateStore()
+            logger.debug("Using default InMemoryStateStore")
+
+        self._wrapper_factory = make_flow(flow_name, state_store=state_store)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
         self.payment_flow = payment_flow
+        self.state_store = state_store
         self._register_capabilities(payment_flow)
         self._patch_tool()
         if payment_flow == PaymentFlow.LIST_CHANGE:

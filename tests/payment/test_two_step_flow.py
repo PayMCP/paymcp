@@ -2,8 +2,9 @@
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
-from paymcp.payment.flows.two_step import make_paid_wrapper, PENDING_ARGS
+from paymcp.payment.flows.two_step import make_paid_wrapper
 from paymcp.providers.base import BasePaymentProvider
+from paymcp.state import InMemoryStateStore
 
 
 class TestTwoStepFlow:
@@ -38,13 +39,14 @@ class TestTwoStepFlow:
         func.return_value = {"result": "executed"}
         return func
 
-    def setup_method(self):
-        """Clear PENDING_ARGS before each test."""
-        PENDING_ARGS.clear()
+    @pytest.fixture
+    def state_store(self):
+        """Create a fresh state store for each test."""
+        return InMemoryStateStore()
 
     @pytest.mark.asyncio
     async def test_initiate_step_with_webview(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test the initiation step when webview is available."""
         with patch("paymcp.payment.flows.two_step.open_payment_webview_if_available") as mock_webview, \
@@ -53,7 +55,7 @@ class TestTwoStepFlow:
             mock_webview.return_value = True
             mock_webview_msg.return_value = "Webview opened for payment"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper(arg1="value1", arg2="value2")
 
             # Verify payment was created
@@ -72,12 +74,14 @@ class TestTwoStepFlow:
             assert result["next_step"] == "confirm_test_tool_payment"
             assert result["message"] == "Webview opened for payment"
 
-            # Verify args were stored
-            assert PENDING_ARGS["payment_123"] == {"arg1": "value1", "arg2": "value2"}
+            # Verify args were stored in state store
+            stored_data = await state_store.get("payment_123")
+            assert stored_data is not None
+            assert stored_data["args"] == {"arg1": "value1", "arg2": "value2"}
 
     @pytest.mark.asyncio
     async def test_initiate_step_without_webview(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test the initiation step when webview is not available."""
         with patch("paymcp.payment.flows.two_step.open_payment_webview_if_available") as mock_webview, \
@@ -86,7 +90,7 @@ class TestTwoStepFlow:
             mock_webview.return_value = False
             mock_link_msg.return_value = "Open payment link"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper(test_param="test_value")
 
             # Verify link message was used
@@ -94,11 +98,14 @@ class TestTwoStepFlow:
 
             # Verify response structure
             assert result["message"] == "Open payment link"
-            assert PENDING_ARGS["payment_123"] == {"test_param": "test_value"}
+
+            # Verify args were stored
+            stored_data = await state_store.get("payment_123")
+            assert stored_data["args"] == {"test_param": "test_value"}
 
     @pytest.mark.asyncio
     async def test_confirm_step_successful_payment(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test the confirmation step with successful payment."""
         # Capture the confirm function when tool decorator is called
@@ -113,7 +120,7 @@ class TestTwoStepFlow:
         mock_mcp.tool = capture_tool
 
         # Setup: First run initiate step
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
         await wrapper(original_arg="original_value")
 
         # Verify confirm tool was registered
@@ -131,12 +138,13 @@ class TestTwoStepFlow:
         # Verify result
         assert result == {"result": "executed"}
 
-        # Verify args were cleaned up
-        assert "payment_123" not in PENDING_ARGS
+        # Verify args were cleaned up from state store
+        stored_data = await state_store.get("payment_123")
+        assert stored_data is None
 
     @pytest.mark.asyncio
     async def test_confirm_step_unknown_payment_id(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test the confirmation step with unknown payment ID."""
         # Capture the confirm function when tool decorator is called
@@ -150,7 +158,7 @@ class TestTwoStepFlow:
 
         mock_mcp.tool = capture_tool
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
 
         # Test with unknown payment ID
         with pytest.raises(RuntimeError, match="Unknown or expired payment_id"):
@@ -161,7 +169,7 @@ class TestTwoStepFlow:
 
     @pytest.mark.asyncio
     async def test_confirm_step_unpaid_status(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test the confirmation step when payment is not yet paid."""
         # Capture the confirm function when tool decorator is called
@@ -176,7 +184,7 @@ class TestTwoStepFlow:
         mock_mcp.tool = capture_tool
 
         # Setup: First run initiate step
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
         await wrapper(test_arg="test_value")
 
         # Set provider to return unpaid status
@@ -190,14 +198,15 @@ class TestTwoStepFlow:
         mock_func.assert_not_called()
 
         # Verify args were not cleaned up (payment still pending)
-        assert "payment_123" in PENDING_ARGS
+        stored_data = await state_store.get("payment_123")
+        assert stored_data is not None
 
     @pytest.mark.asyncio
     async def test_confirm_tool_registration(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test that the confirm tool is properly registered."""
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
 
         # Verify the confirm tool was registered
         mock_mcp.tool.assert_called_once_with(
@@ -206,20 +215,20 @@ class TestTwoStepFlow:
         )
 
     def test_wrapper_preserves_function_metadata(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test that wrapper preserves original function metadata."""
         mock_func.__doc__ = "Original function docstring"
         mock_func.__name__ = "original_function"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
 
         assert wrapper.__name__ == "original_function"
         assert wrapper.__doc__ == "Original function docstring"
 
     @pytest.mark.asyncio
     async def test_multiple_pending_payments(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test handling multiple pending payments."""
         # Create provider that returns different payment IDs
@@ -228,21 +237,24 @@ class TestTwoStepFlow:
             ("payment_2", "https://payment2.url")
         ]
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
 
         # Initiate two payments
         await wrapper(first_call="value1")
         await wrapper(second_call="value2")
 
         # Verify both payments are stored
-        assert "payment_1" in PENDING_ARGS
-        assert "payment_2" in PENDING_ARGS
-        assert PENDING_ARGS["payment_1"] == {"first_call": "value1"}
-        assert PENDING_ARGS["payment_2"] == {"second_call": "value2"}
+        data1 = await state_store.get("payment_1")
+        data2 = await state_store.get("payment_2")
+
+        assert data1 is not None
+        assert data2 is not None
+        assert data1["args"] == {"first_call": "value1"}
+        assert data2["args"] == {"second_call": "value2"}
 
     @pytest.mark.asyncio
     async def test_pending_args_debug_logging(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test that pending args are logged for debugging."""
         # Capture the confirm function when tool decorator is called
@@ -257,7 +269,7 @@ class TestTwoStepFlow:
         mock_mcp.tool = capture_tool
 
         # Setup: First run initiate step
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
         await wrapper(debug_arg="debug_value")
 
         # Test the confirm step (should log debug info)
@@ -267,5 +279,17 @@ class TestTwoStepFlow:
             # Verify debug logging occurred
             assert mock_logger.debug.called
             debug_calls = mock_logger.debug.call_args_list
-            assert any("PENDING_ARGS keys" in str(call) for call in debug_calls)
-            assert any("Retrieved args" in str(call) for call in debug_calls)
+            assert any("Retrieved data" in str(call) for call in debug_calls)
+
+    @pytest.mark.asyncio
+    async def test_default_state_store_creation(
+        self, mock_func, mock_mcp, mock_provider, price_info
+    ):
+        """Test that default InMemoryStateStore is created when none provided."""
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+
+        # Should not raise an error
+        result = await wrapper(test_arg="test_value")
+
+        assert result["payment_id"] == "payment_123"
+        # Default state store should work
