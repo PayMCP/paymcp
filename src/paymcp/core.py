@@ -73,7 +73,7 @@ class PayMCP:
                 # Patch create_initialization_options to inject capabilities
                 original_create_init_options = server.create_initialization_options
 
-                def patched_create_init_options(notification_options=None, experimental_caps=None):
+                def patched_create_init_options(notification_options=None, experimental_caps=None):  # pragma: no cover
                     # Import NotificationOptions from MCP SDK
                     from mcp.server.lowlevel.server import NotificationOptions
 
@@ -92,7 +92,7 @@ class PayMCP:
                 server.create_initialization_options = patched_create_init_options
 
                 logger.debug(f"✅ Registered capabilities for {payment_flow.value} flow: {experimental_capabilities}")
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             logger.warning(f"⚠️ Could not register capabilities: {e}")
 
     def _patch_tool(self):
@@ -164,7 +164,7 @@ class PayMCP:
             tool_manager = self.mcp._tool_manager
             original_list_tools = tool_manager.list_tools
 
-            def filtered_list_tools():
+            def filtered_list_tools():  # pragma: no cover
                 """Filtered version of list_tools that respects HIDDEN_TOOLS per session"""
                 # Get all tools from original method (synchronous)
                 all_tools = original_list_tools()

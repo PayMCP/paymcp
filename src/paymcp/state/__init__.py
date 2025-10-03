@@ -13,6 +13,6 @@ __all__ = [
 try:
     from .redis import RedisStateStore
     __all__.append('RedisStateStore')
-except ImportError:
+except ImportError:  # pragma: no cover
     # redis package not installed, skip RedisStateStore
     pass

@@ -18,5 +18,5 @@ __all__ = [
 try:
     from .state import RedisStateStore
     __all__.append("RedisStateStore")
-except ImportError:
+except ImportError:  # pragma: no cover
     pass

@@ -24,7 +24,7 @@ class StateStore(Protocol):
         Raises:
             Exception: If storage operation fails
         """
-        ...
+        ...  # pragma: no cover
 
     async def get(self, key: str) -> Optional[Dict[str, Any]]:
         """Retrieve stored arguments for a payment.
@@ -40,7 +40,7 @@ class StateStore(Protocol):
         Raises:
             Exception: If retrieval operation fails
         """
-        ...
+        ...  # pragma: no cover
 
     async def delete(self, key: str) -> None:
         """Delete stored arguments for a payment.
@@ -51,4 +51,4 @@ class StateStore(Protocol):
         Raises:
             Exception: If deletion operation fails
         """
-        ...
+        ...  # pragma: no cover

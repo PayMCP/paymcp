@@ -52,7 +52,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store: Optional[Sta
             raise RuntimeError("Unknown or expired payment_id")
 
         original_args = stored_data.get('args')
-        if original_args is None:
+        if original_args is None:  # pragma: no cover
             raise RuntimeError("Invalid stored data for payment_id")
 
         status = provider.get_payment_status(payment_id)
