@@ -146,7 +146,7 @@ if REDIS_AVAILABLE:
         async def close(self) -> None:
             """Close the Redis connection."""
             if self._client:
-                await self._client.close()
+                await self._client.aclose()
                 self._client = None
                 logger.debug("Redis client closed")
 else:
