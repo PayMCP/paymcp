@@ -187,6 +187,19 @@ class MockPaymentProvider(BasePaymentProvider):
                     current_status = "paid"
                     self.logger.info(f"Auto-confirmed payment: {payment_id}")
 
+            # Handle delay simulation logic (for payment_id with embedded delay)
+            # Check if this is a delay-simulated payment still pending
+            if current_status == "pending" and 'metadata' in payment and 'delay' in payment['metadata']:
+                elapsed = time.time() - payment['created_at']
+                target_delay = payment['metadata']['delay']
+                target_status = payment['metadata'].get('target_status', 'paid')
+
+                if elapsed >= target_delay:
+                    # Delay has elapsed, transition to target status
+                    payment['status'] = target_status
+                    current_status = target_status
+                    self.logger.debug(f"Delay elapsed for {payment_id}: transitioning to '{target_status}'")
+
             self.logger.debug(f"Payment status check: {payment_id} = {current_status}")
             return current_status
 

@@ -342,3 +342,97 @@ def test_prefix_hint_no_status_part():
     # Query with only "mock_" prefix (no status part)
     status = provider.get_payment_status("mock_abc123")
     assert status == "expired"
+
+
+def test_payment_id_delay_simulation_instant():
+    """Test delay simulation with 0ms delay (instant paid)."""
+    provider = MockPaymentProvider()
+
+    # Payment ID with 0ms delay: mock_paid_abc123_0
+    payment_id = "mock_paid_abc123def456_0"
+
+    # Should immediately return "paid" (delay=0)
+    status = provider.get_payment_status(payment_id)
+    assert status == "paid"
+
+
+def test_payment_id_delay_simulation_pending_then_paid():
+    """Test delay simulation transitions from pending to paid."""
+    provider = MockPaymentProvider()
+
+    # Payment ID with 200ms delay - format: mock_{status}_{hex16}_{delay_ms}
+    payment_id = "mock_paid_abcdef1234567890_200"
+
+    # First check: should be pending (delay not elapsed)
+    status1 = provider.get_payment_status(payment_id)
+    assert status1 == "pending"
+
+    # Wait for delay to elapse
+    time.sleep(0.25)
+
+    # Second check: should be paid (delay elapsed)
+    status2 = provider.get_payment_status(payment_id)
+    assert status2 == "paid"
+
+
+def test_payment_id_delay_simulation_failed_with_delay():
+    """Test delay simulation with failed status after delay."""
+    provider = MockPaymentProvider()
+
+    # Payment ID with 300ms delay - format: mock_{status}_{hex16}_{delay_ms}
+    payment_id = "mock_failed_1234567890abcdef_300"
+
+    # Before delay: pending
+    status1 = provider.get_payment_status(payment_id)
+    assert status1 == "pending"
+
+    # After delay: failed
+    time.sleep(0.35)
+    status2 = provider.get_payment_status(payment_id)
+    assert status2 == "failed"
+
+
+def test_payment_id_delay_simulation_multiple_checks():
+    """Test that delay simulation handles multiple status checks correctly."""
+    provider = MockPaymentProvider()
+
+    # Payment ID with 100ms delay - format: mock_{status}_{hex16}_{delay_ms}
+    payment_id = "mock_paid_fedcba0987654321_100"
+
+    # Multiple checks before delay - all should return pending
+    for _ in range(3):
+        status = provider.get_payment_status(payment_id)
+        assert status == "pending"
+        time.sleep(0.02)  # 20ms between checks
+
+    # Wait for delay to fully elapse
+    time.sleep(0.15)
+
+    # Now should be paid
+    status = provider.get_payment_status(payment_id)
+    assert status == "paid"
+
+    # Subsequent checks should remain paid
+    status = provider.get_payment_status(payment_id)
+    assert status == "paid"
+
+
+def test_payment_id_delay_simulation_payment_entry_created():
+    """Test that delay simulation creates internal payment entry."""
+    provider = MockPaymentProvider()
+
+    # Payment ID with delay
+    payment_id = "mock_paid_delay_500"
+
+    # First call creates payment entry
+    status1 = provider.get_payment_status(payment_id)
+    assert status1 == "pending"
+
+    # Payment should now exist in internal storage
+    details = provider.get_payment_details(payment_id)
+    assert details is not None
+    assert details['status'] == 'pending'
+    assert 'created_at' in details
+    assert 'metadata' in details
+    assert details['metadata']['target_status'] == 'paid'
+    assert details['metadata']['delay'] == 0.5  # 500ms = 0.5s
