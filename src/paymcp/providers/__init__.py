@@ -1,9 +1,10 @@
 from .stripe import StripeProvider
-from .walleot import WalleotProvider   
+from .walleot import WalleotProvider
 from .adyen import AdyenProvider
 from .paypal import PayPalProvider
 from .square import SquareProvider
 from .coinbase import CoinbaseProvider
+from .mock import MockPaymentProvider
 from .base import BasePaymentProvider
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "PayPalProvider",
     "SquareProvider",
     "CoinbaseProvider",
+    "MockPaymentProvider",
 ]
 
 from typing import Any, Iterable, Mapping, Type, Dict, Optional
@@ -24,7 +26,8 @@ PROVIDER_MAP = {
     "paypal": PayPalProvider,
     "adyen": AdyenProvider,
     "square": SquareProvider,
-    "coinbase": CoinbaseProvider
+    "coinbase": CoinbaseProvider,
+    "mock": MockPaymentProvider
 }
 
 
