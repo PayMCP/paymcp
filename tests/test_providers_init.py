@@ -247,6 +247,29 @@ class TestBuildProviders:
         with pytest.raises(TypeError, match="Provider 'bad' must subclass BasePaymentProvider"):
             build_providers(config)
 
+    def test_build_providers_isinstance_check_fails(self):
+        """Test line 113: isinstance check after construction."""
+        # Create a class that passes issubclass check but fails isinstance check
+        # This is tricky - we need to mock the constructor to return wrong type
+
+        class TrickyProvider(BasePaymentProvider):
+            def __new__(cls, **kwargs):
+                # Return a plain object instead of TrickyProvider instance
+                return object()
+
+            def create_payment(self, amount, currency, description):
+                return "id", "url"
+
+            def get_payment_status(self, payment_id):
+                return "paid"
+
+        config = {"tricky": {"api_key": "test"}}
+        register_provider("tricky", TrickyProvider)
+
+        # Should fail on line 113 isinstance check
+        with pytest.raises(TypeError, match="Constructed provider for 'tricky' is not a BasePaymentProvider"):
+            build_providers(config)
+
     def test_build_providers_iterable_invalid_type(self):
         """Test building providers from iterable with invalid types."""
         with pytest.raises(TypeError, match="contains non-provider instance"):
