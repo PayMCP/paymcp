@@ -1,7 +1,7 @@
 """Tests for RedisStateStore."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 import json
 from paymcp.state.redis import RedisStateStore
 

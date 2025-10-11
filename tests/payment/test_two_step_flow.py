@@ -166,7 +166,7 @@ class TestTwoStepFlow:
 
         mock_mcp.tool = capture_tool
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
 
         # Test with unknown payment ID
         with pytest.raises(RuntimeError, match="Unknown or expired payment_id"):
@@ -213,7 +213,7 @@ class TestTwoStepFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
     ):
         """Test that the confirm tool is properly registered."""
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
 
         # Verify the confirm tool was registered
         mock_mcp.tool.assert_called_once_with(
