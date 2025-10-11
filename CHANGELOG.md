@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0
+## 0.2.1
 ### Added
 - Pluggable state storage for TWO_STEP flow
   - `InMemoryStateStore`: Default in-memory storage (backward compatible, process-local)
