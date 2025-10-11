@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+### Added
+- Pluggable state storage for TWO_STEP flow
+  - `InMemoryStateStore`: Default in-memory storage (backward compatible, process-local)
+  - `RedisStateStore`: Production-ready distributed state storage using Redis
+  - Custom state stores supported via duck typing
+
 ## 0.2.0
 ### Added
 - Extensible provider system. Providers can now be supplied in multiple ways:
