@@ -112,6 +112,24 @@ def add(a: int, b: int, ctx: Context) -> int:
 
 ---
 
+## 🗄️ State Storage (TWO_STEP only)
+
+By default, TWO_STEP uses in-memory storage (not durable). For production, use Redis:
+
+```python
+from redis.asyncio import from_url
+from paymcp import PayMCP, RedisStateStore
+
+redis = await from_url("redis://localhost:6379")
+PayMCP(
+    mcp,
+    providers={"stripe": {"apiKey": "..."}},
+    state_store=RedisStateStore(redis)
+)
+```
+
+---
+
 ## 🪟 Optional: WebView (STDIO)
 
 Open the payment link in a native window when your MCP server is connected via the stdio transport (typical for local/desktop installs).

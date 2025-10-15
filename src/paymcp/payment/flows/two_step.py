@@ -1,15 +1,12 @@
 # paymcp/payment/flows/two_step.py
 import functools
-from typing import Dict, Any
 from ...utils.messages import open_link_message, opened_webview_message
 from ..webview import open_payment_webview_if_available
 import logging
 logger = logging.getLogger(__name__)
 
-PENDING_ARGS: Dict[str, Dict[str, Any]] = {} #TODO redis?
 
-
-def make_paid_wrapper(func, mcp, provider, price_info):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
     """
     Implements the two‑step payment flow:
 
@@ -28,23 +25,16 @@ def make_paid_wrapper(func, mcp, provider, price_info):
     )
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
-        original_args = PENDING_ARGS.get(str(payment_id), None)
-        logger.debug(f"[confirm_tool] PENDING_ARGS keys: {list(PENDING_ARGS.keys())}")
-        logger.debug(f"[confirm_tool] Retrieved args: {original_args}")
-        if original_args is None:
+        stored = await state_store.get(str(payment_id))
+        if not stored:
             raise RuntimeError("Unknown or expired payment_id")
-        
+
         status = provider.get_payment_status(payment_id)
         if status != "paid":
-            raise RuntimeError(
-                f"Payment status is {status}, expected 'paid'"
-            )
-        logger.debug(f"[confirm_tool] Calling {func.__name__} with args: {original_args}")
+            raise RuntimeError(f"Payment status is {status}, expected 'paid'")
 
-        del PENDING_ARGS[str(payment_id)]
-
-        # Call the original tool with its initial arguments
-        return await func(**original_args)
+        await state_store.delete(str(payment_id))
+        return await func(**stored["args"])
 
     # --- Step 1: payment initiation -------------------------------------------
     @functools.wraps(func)
@@ -65,7 +55,7 @@ def make_paid_wrapper(func, mcp, provider, price_info):
             )
 
         pid_str = str(payment_id)
-        PENDING_ARGS[pid_str] = kwargs
+        await state_store.set(pid_str, kwargs)
 
         # Return data for the user / LLM
         return {
