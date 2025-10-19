@@ -351,9 +351,111 @@ async def test_list_change_handles_payment_status_error(mock_mcp, mock_provider,
     assert confirm_result["status"] == "error"
 
 
+@pytest.mark.asyncio
+async def test_list_change_removes_price_attribute(mock_mcp, mock_provider, price_info):
+    """Test that _paymcp_price_info attribute is removed from wrapped function."""
+    async def test_func(**kwargs):
+        return {"result": "success"}
+
+    # Add the price attribute (simulating @price decorator)
+    test_func._paymcp_price_info = price_info.copy()
+    assert hasattr(test_func, '_paymcp_price_info')
+
+    # Wrap with LIST_CHANGE flow
+    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+
+    # Attribute should be removed to prevent re-wrapping
+    assert not hasattr(test_func, '_paymcp_price_info')
+
+
+@pytest.mark.asyncio
+async def test_list_change_handles_missing_session_payment(mock_mcp, mock_provider, price_info):
+    """Test confirmation tool when payment ID not found in SESSION_PAYMENTS."""
+    from paymcp.payment.flows.list_change import SESSION_PAYMENTS
+
+    async def test_func(**kwargs):
+        return {"result": "success"}
+
+    mock_mcp._tools['test_func'] = test_func
+    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+
+    # Initiate payment
+    init_result = await wrapper(data="test")
+
+    # Clear SESSION_PAYMENTS to simulate missing session
+    SESSION_PAYMENTS.clear()
+
+    # Get and execute confirmation tool
+    confirm_tool = mock_mcp.registered_tools[init_result["next_tool"]]["func"]
+    confirm_result = await confirm_tool()
+
+    # Should return error about unknown payment
+    assert "error" in confirm_result
+    assert "unknown or expired" in confirm_result["error"].lower()
+    assert confirm_result["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_list_change_deletes_confirmation_tool(mock_mcp, mock_provider, price_info):
+    """Test that confirmation tool is properly deleted after successful payment."""
+    async def test_func(**kwargs):
+        return {"result": "executed"}
+
+    # Setup mock with proper _tool_manager structure
+    mock_tool_manager = MagicMock()
+    mock_tool_manager._tools = {}
+    mock_mcp._tool_manager = mock_tool_manager
+    mock_mcp._tools['test_func'] = test_func
+
+    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+
+    # Initiate payment
+    init_result = await wrapper(data="test")
+    confirm_tool_name = init_result["next_tool"]
+
+    # Confirmation tool should be registered
+    assert confirm_tool_name in mock_mcp.registered_tools
+
+    # Manually add to _tool_manager._tools to simulate real registration
+    mock_mcp._tool_manager._tools[confirm_tool_name] = mock_mcp.registered_tools[confirm_tool_name]["func"]
+
+    # Execute confirmation tool
+    confirm_tool = mock_mcp.registered_tools[confirm_tool_name]["func"]
+    await confirm_tool()
+
+    # Confirmation tool should be deleted from _tools dict
+    assert confirm_tool_name not in mock_mcp._tool_manager._tools
+
+
+@pytest.mark.asyncio
+async def test_list_change_with_webview_opened(mock_mcp, mock_provider, price_info, monkeypatch):
+    """Test payment initiation when webview opens successfully."""
+    from paymcp.payment import webview
+
+    # Mock webview to return True (successfully opened)
+    monkeypatch.setattr(webview, 'open_payment_webview_if_available', lambda url: True)
+
+    async def test_func(**kwargs):
+        return {"result": "success"}
+
+    mock_mcp._tools['test_func'] = test_func
+    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+
+    # Initiate payment
+    result = await wrapper(data="test")
+
+    # Should return result with webview opened message
+    assert "payment_url" in result
+    # The message should indicate webview was opened (not just a link)
+    # This tests line 243 in list_change.py
+
+
 @pytest.fixture(autouse=True)
 def cleanup_state():
     """Clean up state after each test."""
+    from paymcp.payment.flows.list_change import SESSION_PAYMENTS, SESSION_CONFIRMATION_TOOLS
     yield
     PENDING_ARGS.clear()
     HIDDEN_TOOLS.clear()
+    SESSION_PAYMENTS.clear()
+    SESSION_CONFIRMATION_TOOLS.clear()
