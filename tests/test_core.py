@@ -189,9 +189,9 @@ class TestPayMCP:
         func.__name__ = "test_func"
         func.__doc__ = "Test function"
 
-        # Call the patched tool - this should trigger a StopIteration error
+        # Call the patched tool - this should trigger a RuntimeError
         # when trying to get the first provider from an empty dict
-        with pytest.raises(StopIteration):
+        with pytest.raises(RuntimeError, match="No payment provider configured"):
             paymcp.mcp.tool(name="test_tool")(func)
 
     @patch("paymcp.core.build_providers")
