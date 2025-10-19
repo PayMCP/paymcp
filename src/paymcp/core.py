@@ -38,11 +38,46 @@ class PayMCP:
         return next(iter(self.providers.values()))
 
     def _register_capabilities(self, payment_flow: PaymentFlow):
-        """Register MCP capabilities based on payment flow"""
+        """
+        Register MCP capabilities based on payment flow.
+
+        **WHY THIS PATCHING EXISTS**:
+        The MCP SDK (as of v1.x) has NO library-level API for capability registration.
+        To advertise capabilities like 'elicitation' and 'tools_changed' (required for LIST_CHANGE flow),
+        we must patch the server's create_initialization_options() method.
+
+        **RISKS AND LIMITATIONS**:
+        - INVASIVE: Modifies internal SDK methods
+        - RE-INITIALIZATION: If developers manually re-initialize the server, this patch may conflict
+        - SDK UPDATES: Future SDK versions might change internal APIs, breaking this approach
+
+        **ALTERNATIVES CONSIDERED**:
+        1. Manual capability setting by developers - Rejected: Poor developer experience
+        2. Wait for SDK library-level API - Rejected: No ETA from SDK team
+        3. Current approach - Chosen: Works today, documented risks
+
+        **FUTURE IMPROVEMENT**:
+        TODO: Create ticket to explore cleaner capability registration when SDK provides API
+        See: https://github.com/modelcontextprotocol/sdk/issues/XXX (TODO: Create issue)
+
+        **OFFICIAL SDK PATTERN**:
+        Session tracking uses the official SDK pattern:
+        ```python
+        from mcp.server.lowlevel.server import request_ctx
+        req_ctx = request_ctx.get()
+        session_id = id(req_ctx.session)
+        ```
+        This is NOT custom complexity - it's the recommended approach per SDK documentation.
+        """
         try:
             # Access the underlying low-level MCP server
             if hasattr(self.mcp, '_mcp_server'):
                 server = self.mcp._mcp_server
+
+                # Guard against double-patching on re-initialization
+                if hasattr(server.create_initialization_options, '_paymcp_patched'):
+                    logger.debug("[PayMCP] create_initialization_options already patched, skipping")
+                    return
 
                 # Build experimental capabilities dict
                 experimental_capabilities = {}
@@ -50,7 +85,7 @@ class PayMCP:
                 # Always advertise elicitation capability (all flows can use it)
                 experimental_capabilities['elicitation'] = {'enabled': True}
 
-                # Patch create_initialization_options to inject capabilities
+                # Save reference to original method
                 original_create_init_options = server.create_initialization_options
 
                 def patched_create_init_options(notification_options=None, experimental_caps=None):
@@ -69,9 +104,13 @@ class PayMCP:
                     merged_caps = {**experimental_capabilities, **(experimental_caps or {})}
                     return original_create_init_options(notification_options, merged_caps)
 
+                # Mark as patched to prevent double-patching
+                patched_create_init_options._paymcp_patched = True
+
                 server.create_initialization_options = patched_create_init_options
 
                 logger.debug(f"✅ Registered capabilities for {payment_flow.value} flow: {experimental_capabilities}")
+                logger.debug("[PayMCP] ⚠️  Patched create_initialization_options() - avoid manual server re-initialization")
         except Exception as e:
             logger.warning(f"⚠️ Could not register capabilities: {e}")
 
