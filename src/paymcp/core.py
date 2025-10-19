@@ -16,15 +16,14 @@ except PackageNotFoundError:
 class PayMCP:
     def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP, state_store=None):
         logger.debug(f"PayMCP v{__version__}")
-        flow_name = payment_flow.value
-        self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
         self.payment_flow = payment_flow
         self.state_store = state_store
-        # Allow flows to perform their own setup before tool patching
-        # (e.g., TWO_STEP needs to initialize state_store, LIST_CHANGE needs to patch tool filtering)
-        self._setup_flow(payment_flow)
+        self._wrapper_factory = make_flow(payment_flow.value)
+
+        # Allow flows to initialize themselves (e.g., TWO_STEP needs state_store, LIST_CHANGE needs patching)
+        self._setup_flow()
         self._patch_tool()
 
     def _get_provider(self):
@@ -33,67 +32,44 @@ class PayMCP:
             raise RuntimeError("No payment provider configured")
         return next(iter(self.providers.values()))
 
-    def _setup_flow(self, payment_flow: PaymentFlow):
-        """
-        Allow payment flows to perform their own setup.
-
-        This hook lets flows handle their own initialization without polluting core.py.
-        For example, LIST_CHANGE flow needs to patch tool filtering and register capabilities.
-        """
+    def _setup_flow(self):
+        """Call flow's setup_flow() if it exists"""
         try:
             from importlib import import_module
-            flow_module = import_module(f".payment.flows.{payment_flow.value}", __package__)
+            flow_module = import_module(f".payment.flows.{self.payment_flow.value}", __package__)
             if hasattr(flow_module, 'setup_flow'):
-                logger.debug(f"[PayMCP] Calling setup_flow() for {payment_flow.value}")
-                flow_module.setup_flow(self.mcp, self, payment_flow)
+                flow_module.setup_flow(self.mcp, self, self.payment_flow)
         except Exception as e:
-            logger.debug(f"[PayMCP] No setup_flow() for {payment_flow.value}: {e}")
+            logger.debug(f"No setup_flow() for {self.payment_flow.value}: {e}")
+
+    def _create_paid_tool_wrapper(self, func, price_info):
+        """Create payment-gated wrapper for a tool function"""
+        provider = self._get_provider()
+        return self._wrapper_factory(func, self.mcp, provider, price_info, self.state_store)
 
     def _patch_tool(self):
+        """Intercept tool registration to add payment gating for @price decorated tools"""
         original_tool = self.mcp.tool
+
         def patched_tool(*args, **kwargs):
-            # Handle FastMCP's flexible calling patterns
-            # Case 1: @mcp.tool (without parentheses) - first arg is the function
-            # Case 2: @mcp.tool() (with empty parentheses) - no args, returns decorator
-            # Case 3: @mcp.tool(description="...") - kwargs only, returns decorator
-
-            # Check if first argument is a callable function (Case 1)
-            if len(args) > 0 and callable(args[0]) and not isinstance(args[0], str):
+            # Handle @mcp.tool(func) - function as first arg
+            if args and callable(args[0]) and not isinstance(args[0], str):
                 func = args[0]
-                # Read @price decorator
-                price_info = getattr(func, "_paymcp_price_info", None)
-
-                if price_info:
-                    provider = self._get_provider()
-                    # Deferred payment creation, so do not call provider.create_payment here
-                    kwargs["description"] = description_with_price(kwargs.get("description") or func.__doc__ or "", price_info)
-                    # All flows now accept uniform signature with state_store parameter
-                    target_func = self._wrapper_factory(
-                        func, self.mcp, provider, price_info, self.state_store
+                if price_info := getattr(func, "_paymcp_price_info", None):
+                    kwargs["description"] = description_with_price(
+                        kwargs.get("description") or func.__doc__ or "", price_info
                     )
-                else:
-                    target_func = func
+                    func = self._create_paid_tool_wrapper(func, price_info)
+                return original_tool(func, *args[1:], **kwargs)
 
-                # Call original_tool with function as first argument
-                return original_tool(target_func, *args[1:], **kwargs)
-            else:
-                # Case 2 & 3: Return a decorator
-                def wrapper(func):
-                    # Read @price decorator
-                    price_info = getattr(func, "_paymcp_price_info", None)
-
-                    if price_info:
-                        provider = self._get_provider()
-                        # Deferred payment creation, so do not call provider.create_payment here
-                        kwargs["description"] = description_with_price(kwargs.get("description") or func.__doc__ or "", price_info)
-                        # All flows now accept uniform signature with state_store parameter
-                        target_func = self._wrapper_factory(
-                            func, self.mcp, provider, price_info, self.state_store
-                        )
-                    else:
-                        target_func = func
-
-                    return original_tool(*args, **kwargs)(target_func)
-                return wrapper
+            # Handle @mcp.tool() or @mcp.tool(description="...") - returns decorator
+            def decorator(func):
+                if price_info := getattr(func, "_paymcp_price_info", None):
+                    kwargs["description"] = description_with_price(
+                        kwargs.get("description") or func.__doc__ or "", price_info
+                    )
+                    func = self._create_paid_tool_wrapper(func, price_info)
+                return original_tool(*args, **kwargs)(func)
+            return decorator
 
         self.mcp.tool = patched_tool
