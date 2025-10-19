@@ -48,7 +48,14 @@ class PayMCP:
             logger.debug(f"No setup_flow() for {self.payment_flow.value}: {e}")
 
     def _create_paid_tool_wrapper(self, func, price_info):
-        """Create payment-gated wrapper for a tool function"""
+        """
+        Create payment-gated wrapper for a tool function.
+
+        This helper method eliminates code duplication in _patch_tool() where
+        wrapper creation occurs in two places (direct decoration and decorator return).
+        Previously, wrapper creation logic was inlined, causing duplication and
+        making the code harder to maintain.
+        """
         provider = self._get_provider()
         return self._wrapper_factory(func, self.mcp, provider, price_info, self.state_store)
 
