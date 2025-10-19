@@ -430,10 +430,11 @@ async def test_list_change_deletes_confirmation_tool(mock_mcp, mock_provider, pr
 @pytest.mark.asyncio
 async def test_list_change_with_webview_opened(mock_mcp, mock_provider, price_info, monkeypatch):
     """Test payment initiation when webview opens successfully."""
-    from paymcp.payment import webview
+    from paymcp.payment.flows import list_change
 
     # Mock webview to return True (successfully opened)
-    monkeypatch.setattr(webview, 'open_payment_webview_if_available', lambda url: True)
+    # Must patch in list_change module since it imports the function directly
+    monkeypatch.setattr(list_change, 'open_payment_webview_if_available', lambda url: True)
 
     async def test_func(**kwargs):
         return {"result": "success"}
@@ -446,8 +447,10 @@ async def test_list_change_with_webview_opened(mock_mcp, mock_provider, price_in
 
     # Should return result with webview opened message
     assert "payment_url" in result
-    # The message should indicate webview was opened (not just a link)
-    # This tests line 243 in list_change.py
+    assert "message" in result
+    # Verify the message indicates webview was opened (contains webview-specific text)
+    assert "payment window should be open" in result["message"].lower()
+    # This tests line 243 in list_change.py (opened_webview_message path)
 
 
 @pytest.fixture(autouse=True)
