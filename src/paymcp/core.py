@@ -21,14 +21,11 @@ class PayMCP:
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
         self.payment_flow = payment_flow
-        # Only TWO_STEP needs state_store - create default if needed
-        if state_store is None and payment_flow == PaymentFlow.TWO_STEP:
-            from .state import InMemoryStateStore
-            state_store = InMemoryStateStore()
         self.state_store = state_store
-        self._patch_tool()
-        # Allow flows to perform their own setup (e.g., LIST_CHANGE needs to patch tool filtering)
+        # Allow flows to perform their own setup before tool patching
+        # (e.g., TWO_STEP needs to initialize state_store, LIST_CHANGE needs to patch tool filtering)
         self._setup_flow(payment_flow)
+        self._patch_tool()
 
     def _get_provider(self):
         """Get the first available payment provider"""

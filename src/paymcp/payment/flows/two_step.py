@@ -66,3 +66,17 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
         }
 
     return _initiate_wrapper
+
+
+def setup_flow(mcp, paymcp_instance, payment_flow):
+    """
+    Setup function called by core.py to initialize TWO_STEP flow.
+
+    TWO_STEP flow requires a state_store to persist payment arguments between
+    initiation and confirmation steps. If not provided by the user, we create
+    a default InMemoryStateStore.
+    """
+    if paymcp_instance.state_store is None:
+        from ...state import InMemoryStateStore
+        paymcp_instance.state_store = InMemoryStateStore()
+        logger.debug("[TWO_STEP] Created default InMemoryStateStore")
