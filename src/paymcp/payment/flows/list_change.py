@@ -33,7 +33,7 @@ SESSION_PAYMENTS: Dict[str, str] = {}  # payment_id -> session_id
 SESSION_CONFIRMATION_TOOLS: Dict[str, str] = {}  # confirmation_tool_name -> session_id
 
 
-def make_paid_wrapper(func, mcp, provider, price_info):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
     """
     Implements the LIST_CHANGE payment flow:
 
