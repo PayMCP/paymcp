@@ -16,72 +16,48 @@ except PackageNotFoundError:
 class PayMCP:
     def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP, state_store=None):
         logger.debug(f"PayMCP v{__version__}")
+        flow_name = payment_flow.value
+        self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
         self.payment_flow = payment_flow
 
-        # Default to InMemoryStateStore for all flows (TWO_STEP uses it, others ignore it)
-        if state_store is None:
+        # Only TWO_STEP needs state_store - create default if needed
+        if state_store is None and payment_flow == PaymentFlow.TWO_STEP:
             from .state import InMemoryStateStore
             state_store = InMemoryStateStore()
         self.state_store = state_store
-        self._wrapper_factory = make_flow(payment_flow.value)
-
-        # Allow flows to initialize themselves (e.g., LIST_CHANGE needs patching)
-        self._setup_flow()
         self._patch_tool()
 
-    def _get_provider(self):
-        """Get the first available payment provider"""
-        if not self.providers:
-            raise RuntimeError("No payment provider configured")
-        return next(iter(self.providers.values()))
-
-    def _setup_flow(self):
-        """Call flow's setup_flow() if it exists"""
-        try:
-            from importlib import import_module
-            flow_module = import_module(f".payment.flows.{self.payment_flow.value}", __package__)
-            if hasattr(flow_module, 'setup_flow'):
-                flow_module.setup_flow(self.mcp, self, self.payment_flow)
-        except Exception as e:
-            logger.debug(f"No setup_flow() for {self.payment_flow.value}: {e}")
-
-    def _create_paid_tool_wrapper(self, func, price_info):
-        """
-        Create payment-gated wrapper for a tool function.
-
-        This helper method eliminates code duplication in _patch_tool() where
-        wrapper creation occurs in two places (direct decoration and decorator return).
-        Previously, wrapper creation logic was inlined, causing duplication and
-        making the code harder to maintain.
-        """
-        provider = self._get_provider()
-        return self._wrapper_factory(func, self.mcp, provider, price_info, self.state_store)
+        # LIST_CHANGE flow requires patching MCP internals
+        if payment_flow == PaymentFlow.LIST_CHANGE:
+            from .payment.flows.list_change import setup_flow
+            setup_flow(mcp_instance, self, payment_flow)
 
     def _patch_tool(self):
-        """Intercept tool registration to add payment gating for @price decorated tools"""
         original_tool = self.mcp.tool
-
         def patched_tool(*args, **kwargs):
-            # Handle @mcp.tool(func) - function as first arg
-            if args and callable(args[0]) and not isinstance(args[0], str):
-                func = args[0]
-                if price_info := getattr(func, "_paymcp_price_info", None):
-                    kwargs["description"] = description_with_price(
-                        kwargs.get("description") or func.__doc__ or "", price_info
-                    )
-                    func = self._create_paid_tool_wrapper(func, price_info)
-                return original_tool(func, *args[1:], **kwargs)
+            def wrapper(func):
+                # Read @price decorator
+                price_info = getattr(func, "_paymcp_price_info", None)
 
-            # Handle @mcp.tool() or @mcp.tool(description="...") - returns decorator
-            def decorator(func):
-                if price_info := getattr(func, "_paymcp_price_info", None):
-                    kwargs["description"] = description_with_price(
-                        kwargs.get("description") or func.__doc__ or "", price_info
+                if price_info:
+                    # --- Create payment using provider ---
+                    provider = next(iter(self.providers.values())) #get first one - TODO allow to choose
+                    if provider is None:
+                        raise RuntimeError(
+                            f"No payment provider configured"
+                        )
+
+                    # Deferred payment creation, so do not call provider.create_payment here
+                    kwargs["description"] = description_with_price(kwargs.get("description") or func.__doc__ or "", price_info)
+                    target_func = self._wrapper_factory(
+                        func, self.mcp, provider, price_info, self.state_store
                     )
-                    func = self._create_paid_tool_wrapper(func, price_info)
-                return original_tool(*args, **kwargs)(func)
-            return decorator
+                else:
+                    target_func = func
+
+                return original_tool(*args, **kwargs)(target_func)
+            return wrapper
 
         self.mcp.tool = patched_tool

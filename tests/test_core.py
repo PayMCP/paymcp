@@ -188,9 +188,9 @@ class TestPayMCP:
         func.__name__ = "test_func"
         func.__doc__ = "Test function"
 
-        # Call the patched tool - this should trigger a RuntimeError
+        # Call the patched tool - this should trigger a StopIteration error
         # when trying to get the first provider from an empty dict
-        with pytest.raises(RuntimeError, match="No payment provider configured"):
+        with pytest.raises(StopIteration):
             paymcp.mcp.tool(name="test_tool")(func)
 
     @patch("paymcp.core.build_providers")
@@ -226,105 +226,6 @@ class TestPayMCP:
 
         # Verify the wrapper factory was called
         assert wrapper is not None
-
-    @patch("paymcp.core.build_providers")
-    def test_provider_selection_runtime_error(self, mock_build_providers, mock_mcp_instance):
-        """Test provider selection runtime error when no providers are available."""
-        mock_build_providers.return_value = {}  # No providers
-
-        paymcp = PayMCP(mock_mcp_instance, providers={})
-
-        # Create a mock function with price info
-        func = Mock()
-        func._paymcp_price_info = {"price": 10.0, "currency": "USD"}
-        func.__name__ = "test_func"
-        func.__doc__ = "Test function"
-
-        # Mock the wrapper factory to check provider selection logic
-        mock_wrapper_factory = Mock()
-        paymcp._wrapper_factory = mock_wrapper_factory
-
-        # Mock the MCP tool decorator
-        def mock_tool_decorator(*args, **kwargs):
-            def decorator(target_func):
-                # This simulates the actual patched tool behavior
-                price_info = getattr(target_func, "_paymcp_price_info", None)
-                if price_info:
-                    # Try to get first provider - should raise RuntimeError
-                    provider = next(iter(paymcp.providers.values()), None)
-                    if provider is None:
-                        raise RuntimeError("No payment provider configured")
-                return target_func
-            return decorator
-
-        mock_mcp_instance.tool = mock_tool_decorator
-
-        # This should raise RuntimeError when calling the tool with price info
-        # Mock next() to return None to trigger the RuntimeError
-        with patch('builtins.next', return_value=None):
-            with pytest.raises(RuntimeError, match="No payment provider configured"):
-                paymcp.mcp.tool(name="test_tool")(func)
-
-    def test_setup_flow_import_exception_handling(self, mock_mcp_instance, providers_config):
-        """Test _setup_flow exception handling when flow module import fails."""
-        # Create PayMCP with a flow that will fail to import
-        with patch("importlib.import_module") as mock_import:
-            # Make import_module raise an exception
-            mock_import.side_effect = ImportError("Module not found")
-
-            # This should not raise an exception - it should log and continue
-            paymcp = PayMCP(mock_mcp_instance, providers=providers_config, payment_flow=PaymentFlow.TWO_STEP)
-
-            # Verify PayMCP was created successfully despite import error
-            assert paymcp is not None
-            assert paymcp.payment_flow == PaymentFlow.TWO_STEP
-
-    def test_setup_flow_setup_function_exception_handling(self, mock_mcp_instance, providers_config):
-        """Test _setup_flow exception handling when setup_flow() raises exception."""
-        # Create a mock flow module with a setup_flow that raises an exception
-        mock_flow_module = Mock()
-        mock_flow_module.setup_flow = Mock(side_effect=RuntimeError("Setup failed"))
-
-        with patch("importlib.import_module") as mock_import:
-            # Make import_module return our mock module
-            mock_import.return_value = mock_flow_module
-
-            # This should not raise an exception - it should log and continue
-            paymcp = PayMCP(mock_mcp_instance, providers=providers_config, payment_flow=PaymentFlow.TWO_STEP)
-
-            # Verify PayMCP was created successfully despite setup_flow error
-            assert paymcp is not None
-            assert paymcp.payment_flow == PaymentFlow.TWO_STEP
-
-            # Verify setup_flow was actually called
-            mock_flow_module.setup_flow.assert_called_once()
-
-    def test_direct_function_decoration_with_price(self, mock_mcp_instance):
-        """Test direct function decoration (@mcp.tool(func)) with price info."""
-        providers_config = {"stripe": {"api_key": "test"}}
-
-        with patch("paymcp.core.build_providers") as mock_build:
-            mock_provider = Mock(spec=BasePaymentProvider)
-            mock_build.return_value = {"stripe": mock_provider}
-
-            paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
-
-            # Create a function with price info
-            def my_tool():
-                """Test function"""
-                return "result"
-
-            my_tool._paymcp_price_info = {"price": 5.0, "currency": "USD"}
-
-            # Mock wrapper factory
-            mock_wrapper = Mock()
-            paymcp._wrapper_factory = Mock(return_value=mock_wrapper)
-
-            # Call the patched tool with direct function decoration
-            result = paymcp.mcp.tool(my_tool)
-
-            # Verify the wrapper factory was called
-            assert paymcp._wrapper_factory.called
 
     def test_decorator_without_price_info(self, mock_mcp_instance, providers_config):
         """Test that tools without price info are not wrapped."""
