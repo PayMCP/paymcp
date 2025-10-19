@@ -258,3 +258,184 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
         }
 
     return _initiate_wrapper
+
+
+def setup_flow(mcp, paymcp_instance, payment_flow):
+    """
+    Setup function called by core.py to initialize LIST_CHANGE flow.
+
+    This function handles all LIST_CHANGE-specific initialization:
+    1. Register tools_changed capability
+    2. Register elicitation capability (optional, all flows can use it)
+    3. Patch tool_manager.list_tools() for per-session filtering
+
+    **WHY THIS APPROACH**:
+    - Keeps core.py minimal and clean
+    - Isolates flow-specific logic in flow modules
+    - Makes it clear what each flow needs to function
+
+    **MONKEY PATCHING JUSTIFICATION**:
+    The MCP SDK (as of v1.x) provides NO library-level API for:
+    - Dynamic tool visibility per session
+    - Capability registration after server creation
+
+    Therefore we must patch internal methods. This is:
+    - WELL DOCUMENTED: Clear comments explaining why
+    - ISOLATED: All patching confined to this function
+    - GUARDED: Checks prevent double-patching
+    - MINIMAL: Only patches what's necessary
+
+    **ALTERNATIVES CONSIDERED**:
+    1. Wait for SDK API - Rejected: No ETA, blocks functionality
+    2. Fork SDK - Rejected: Maintenance burden too high
+    3. Manual setup by users - Rejected: Poor DX, error-prone
+    4. Current approach - Chosen: Works today, well-isolated
+
+    **FUTURE IMPROVEMENTS**:
+    - Monitor SDK for capability registration API
+    - Monitor SDK for tool filtering hooks
+    - Create SDK feature requests if needed
+    """
+    logger.debug("[LIST_CHANGE] Setting up flow")
+
+    # Step 1: Register capabilities
+    _register_capabilities(mcp, payment_flow)
+
+    # Step 2: Patch tool list filtering
+    _patch_list_tools(mcp)
+
+
+def _register_capabilities(mcp, payment_flow):
+    """
+    Register MCP capabilities for LIST_CHANGE flow.
+
+    Capabilities registered:
+    - tools_changed: Required for LIST_CHANGE to notify clients of tool list updates
+    - elicitation: Optional, allows inline payment UI in compatible clients
+    """
+    try:
+        # Access the underlying low-level MCP server
+        if not hasattr(mcp, '_mcp_server'):
+            logger.warning("[LIST_CHANGE] No _mcp_server found, cannot register capabilities")
+            return
+
+        server = mcp._mcp_server
+
+        # Guard against double-patching on re-initialization
+        if hasattr(server.create_initialization_options, '_paymcp_list_change_patched'):
+            logger.debug("[LIST_CHANGE] Capabilities already registered, skipping")
+            return
+
+        # Build experimental capabilities dict
+        experimental_capabilities = {
+            'elicitation': {'enabled': True}  # Optional: allows inline payment UI
+        }
+
+        # Save reference to original method
+        original_create_init_options = server.create_initialization_options
+
+        def patched_create_init_options(notification_options=None, experimental_caps=None):
+            # Import NotificationOptions from MCP SDK
+            from mcp.server.lowlevel.server import NotificationOptions
+
+            # Enable tools_changed notification for LIST_CHANGE flow
+            if notification_options is None:
+                notification_options = NotificationOptions(tools_changed=True)
+            else:
+                # Update existing notification_options
+                notification_options.tools_changed = True
+
+            # Merge our experimental_capabilities with any provided ones
+            merged_caps = {**experimental_capabilities, **(experimental_caps or {})}
+            return original_create_init_options(notification_options, merged_caps)
+
+        # Mark as patched to prevent double-patching
+        patched_create_init_options._paymcp_list_change_patched = True
+
+        server.create_initialization_options = patched_create_init_options
+
+        logger.debug(f"[LIST_CHANGE] ✅ Registered capabilities: tools_changed=True, elicitation=True")
+    except Exception as e:
+        logger.warning(f"[LIST_CHANGE] ⚠️  Could not register capabilities: {e}")
+
+
+def _patch_list_tools(mcp):
+    """
+    Patch tool_manager.list_tools() to filter tools per-session.
+
+    This enables the core LIST_CHANGE behavior:
+    - Hide original tools for sessions with active payments
+    - Show confirmation tools only to the owning session
+    - Maintain isolation between concurrent users
+    """
+    logger.debug("[LIST_CHANGE] Patching list_tools() for per-session filtering")
+
+    try:
+        # Access the tool manager
+        if not hasattr(mcp, '_tool_manager'):
+            logger.warning("[LIST_CHANGE] No _tool_manager found, cannot patch list_tools()")
+            return
+
+        tool_manager = mcp._tool_manager
+
+        # Guard against double-patching
+        if hasattr(tool_manager.list_tools, '_paymcp_list_change_patched'):
+            logger.debug("[LIST_CHANGE] list_tools() already patched, skipping")
+            return
+
+        original_list_tools = tool_manager.list_tools
+
+        def filtered_list_tools():
+            """Filtered version of list_tools that respects HIDDEN_TOOLS per session"""
+            # Get all tools from original method (synchronous)
+            all_tools = original_list_tools()
+
+            # Get session ID to check for hidden tools
+            session_id = None
+            try:
+                from mcp.server.lowlevel.server import request_ctx
+                req_ctx = request_ctx.get()
+                session_id = id(req_ctx.session)
+            except Exception as e:
+                logger.debug(f"[LIST_CHANGE] Could not get session ID in list_tools: {e}")
+
+            if session_id is None:
+                # No session context - return all tools unfiltered
+                logger.debug("[LIST_CHANGE] list_tools: No session context, returning all tools")
+                return all_tools
+
+            # Filter out hidden tools for this session
+            session_hidden = HIDDEN_TOOLS.get(session_id, {})
+
+            # Filter tools:
+            # 1. Remove tools in session_hidden (original tools that are hidden for this session)
+            # 2. Remove confirmation tools that belong to OTHER sessions
+            filtered_tools = []
+            for tool in all_tools:
+                # Hide original tools marked as hidden for this session
+                if tool.name in session_hidden:
+                    continue
+
+                # If this is a confirmation tool, only show it to the owning session
+                if tool.name in SESSION_CONFIRMATION_TOOLS:
+                    tool_owner_session = SESSION_CONFIRMATION_TOOLS[tool.name]
+                    if tool_owner_session != session_id:
+                        # This confirmation tool belongs to a different session - hide it
+                        continue
+
+                filtered_tools.append(tool)
+
+            hidden_count = len(all_tools) - len(filtered_tools)
+            logger.debug(f"[LIST_CHANGE] list_tools: Session {session_id} filtered {hidden_count} tools")
+
+            return filtered_tools
+
+        # Mark as patched to prevent double-patching
+        filtered_list_tools._paymcp_list_change_patched = True
+
+        # Replace the list_tools method
+        tool_manager.list_tools = filtered_list_tools
+        logger.debug("[LIST_CHANGE] ✅ list_tools() patched for per-session filtering")
+
+    except Exception as e:
+        logger.error(f"[LIST_CHANGE] Failed to patch list_tools(): {e}")
