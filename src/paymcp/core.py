@@ -19,10 +19,15 @@ class PayMCP:
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
         self.payment_flow = payment_flow
+
+        # Default to InMemoryStateStore for all flows (TWO_STEP uses it, others ignore it)
+        if state_store is None:
+            from .state import InMemoryStateStore
+            state_store = InMemoryStateStore()
         self.state_store = state_store
         self._wrapper_factory = make_flow(payment_flow.value)
 
-        # Allow flows to initialize themselves (e.g., TWO_STEP needs state_store, LIST_CHANGE needs patching)
+        # Allow flows to initialize themselves (e.g., LIST_CHANGE needs patching)
         self._setup_flow()
         self._patch_tool()
 
