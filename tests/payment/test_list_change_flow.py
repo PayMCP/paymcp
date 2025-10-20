@@ -205,7 +205,7 @@ async def test_list_change_handles_unpaid_status(mock_mcp, mock_provider, price_
     # Should return error for unpaid status
     assert confirm_result["status"] == "error"
     assert "message" in confirm_result
-    assert "not completed" in confirm_result["message"].lower()
+    assert "expected 'paid'" in confirm_result["message"].lower() or "status is pending" in confirm_result["message"].lower()
     # payment_url is embedded in content text, not a separate field
     assert "payment url" in confirm_result["content"][0]["text"].lower()
 

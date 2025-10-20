@@ -140,8 +140,10 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
             if owner_session_id is None:
                 logger.error(f"[list_change_confirm] No session found for payment_id={pid_str}")
                 return {
-                    "error": f"Unknown or expired payment_id: {pid_str}",
-                    "status": "failed"
+                    "content": [{"type": "text", "text": f"Unknown or expired payment_id: {pid_str}"}],
+                    "status": "error",
+                    "message": "Unknown or expired payment_id",
+                    "payment_id": pid_str
                 }
 
             # Retrieve stored arguments
@@ -149,8 +151,10 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
             if original_args is None:
                 logger.error(f"[list_change_confirm] No pending args for payment_id={pid_str}")
                 return {
-                    "error": f"Unknown or expired payment_id: {pid_str}",
-                    "status": "failed"
+                    "content": [{"type": "text", "text": f"Unknown or expired payment_id: {pid_str}"}],
+                    "status": "error",
+                    "message": "Unknown or expired payment_id",
+                    "payment_id": pid_str
                 }
 
             try:
@@ -160,9 +164,10 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
 
                 if status != "paid":
                     return {
-                        "error": f"Payment not completed. Status: {status}",
-                        "status": "pending",
-                        "payment_url": payment_url
+                        "content": [{"type": "text", "text": f"Payment not completed. Status: {status}\\nPayment URL: {payment_url}"}],
+                        "status": "error",
+                        "message": f"Payment status is {status}, expected 'paid'",
+                        "payment_id": pid_str
                     }
 
                 # Payment successful - execute original function
@@ -224,8 +229,10 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
                         del HIDDEN_TOOLS[owner_session_id]
 
                 return {
-                    "error": f"Error confirming payment: {str(e)}",
-                    "status": "error"
+                    "content": [{"type": "text", "text": f"Error confirming payment: {str(e)}"}],
+                    "status": "error",
+                    "message": "Failed to confirm payment",
+                    "payment_id": pid_str
                 }
 
         # STEP 4: Emit tools/list_changed notification after hiding original tool
