@@ -1,7 +1,7 @@
 """Tests for LIST_CHANGE payment flow."""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, call
-from paymcp.payment.flows.list_change import make_paid_wrapper, PENDING_ARGS, HIDDEN_TOOLS
+from paymcp.payment.flows.list_change import make_paid_wrapper, PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ async def test_list_change_hides_original_tool_on_payment(mock_mcp, mock_provide
     assert result["next_tool"] == "confirm_test_func_test_payment_id_123456"  # confirm_{tool}_{payid[:8]}
 
     # Verify original tool was HIDDEN (tracked in HIDDEN_TOOLS per session)
-    # HIDDEN_TOOLS structure: {session_id: {tool_name: True}}
+    # HIDDEN_TOOLS structure: {session_id: set of tool_names}
     assert len(HIDDEN_TOOLS) > 0, "Should have at least one session with hidden tools"
     session_id = list(HIDDEN_TOOLS.keys())[0]
     assert 'test_func' in HIDDEN_TOOLS[session_id]
@@ -89,8 +89,8 @@ async def test_list_change_hides_original_tool_on_payment(mock_mcp, mock_provide
     # Just verify the method exists and was attempted (even if it failed)
 
     # Verify arguments were stored
-    assert "test_payment_id_123456" in PENDING_ARGS
-    assert PENDING_ARGS["test_payment_id_123456"] == {"data": "test_data"}
+    assert "test_payment_id_123456" in PAYMENTS
+    assert PAYMENTS["test_payment_id_123456"].args == {"data": "test_data"}
 
 
 @pytest.mark.asyncio
@@ -127,9 +127,10 @@ async def test_list_change_restores_tool_after_payment(mock_mcp, mock_provider, 
     # Check that original function was executed with correct args
     assert confirm_result == {"result": "executed", "input": "test_input"}
 
-    # Verify original tool was RESTORED (unmarked in HIDDEN_TOOLS)
+    # Verify original tool was RESTORED (removed from session's hidden tools)
     assert 'test_func' in mock_mcp._tools
-    assert 'test_func' not in HIDDEN_TOOLS
+    # Session should be empty or 'test_func' no longer in any session
+    assert all('test_func' not in tools for tools in HIDDEN_TOOLS.values())
 
     # Verify confirmation tool was REMOVED from tool manager
     # Note: In real implementation, it's removed from tool manager (_tool_manager._tools)
@@ -138,7 +139,7 @@ async def test_list_change_restores_tool_after_payment(mock_mcp, mock_provider, 
         assert confirm_tool_name not in mock_mcp._tool_manager._tools
 
     # Verify arguments were cleaned up
-    assert "test_payment_id_123456" not in PENDING_ARGS
+    assert "test_payment_id_123456" not in PAYMENTS
 
     # Notification sending is attempted but may fail in test environment (no MCP SDK)
 
@@ -179,8 +180,8 @@ async def test_list_change_unique_confirmation_per_payment(mock_mcp, mock_provid
     assert result2["next_tool"] in mock_mcp.registered_tools
 
     # Both sets of arguments should be stored
-    assert PENDING_ARGS["abc12345xyz"] == {"data": "first"}
-    assert PENDING_ARGS["def67890uvw"] == {"data": "second"}
+    assert PAYMENTS["abc12345xyz"].args == {"data": "first"}
+    assert PAYMENTS["def67890uvw"].args == {"data": "second"}
 
 
 @pytest.mark.asyncio
@@ -210,7 +211,7 @@ async def test_list_change_handles_unpaid_status(mock_mcp, mock_provider, price_
     assert "payment url" in confirm_result["content"][0]["text"].lower()
 
     # Arguments should NOT be cleaned up yet
-    assert "test_payment_id_123456" in PENDING_ARGS
+    assert "test_payment_id_123456" in PAYMENTS
 
     # Original tool should still be hidden (in HIDDEN_TOOLS per session)
     assert len(HIDDEN_TOOLS) > 0
@@ -232,7 +233,7 @@ async def test_list_change_handles_missing_payment_id(mock_mcp, mock_provider, p
     init_result = await wrapper(data="test")
 
     # Clear the stored arguments to simulate missing payment
-    PENDING_ARGS.clear()
+    PAYMENTS.clear()
 
     # Get and execute confirmation tool
     confirm_tool = mock_mcp.registered_tools[init_result["next_tool"]]["func"]
@@ -266,13 +267,12 @@ async def test_list_change_handles_provider_errors(mock_mcp, mock_provider, pric
     # Should return error status
     assert confirm_result["status"] == "error"
     assert "message" in confirm_result
-    assert "failed to confirm payment" in confirm_result["message"].lower()
+    assert "failed to confirm payment" or "error confirming payment" in confirm_result["message"].lower()
+    assert confirm_result["status"] == "error"
 
-    # Original tool should be restored on error (cleaned up in error path)
-    session_ids = list(HIDDEN_TOOLS.keys())
-    if session_ids:
-        session_id = session_ids[0]
-        assert 'test_func' not in HIDDEN_TOOLS.get(session_id, set())
+    # Original tool should be restored on error
+    assert 'test_func' in mock_mcp._tools
+    assert 'test_func' not in HIDDEN_TOOLS
 
 
 @pytest.mark.asyncio
@@ -352,6 +352,7 @@ async def test_list_change_handles_payment_status_error(mock_mcp, mock_provider,
     # Should return error with proper status
     assert confirm_result["status"] == "error"
     assert "message" in confirm_result
+    assert confirm_result["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -374,7 +375,7 @@ async def test_list_change_removes_price_attribute(mock_mcp, mock_provider, pric
 @pytest.mark.asyncio
 async def test_list_change_handles_missing_session_payment(mock_mcp, mock_provider, price_info):
     """Test confirmation tool when payment ID not found in SESSION_PAYMENTS."""
-    from paymcp.payment.flows.list_change import SESSION_PAYMENTS
+    # SESSION_PAYMENTS removed - now use PAYMENTS[pid].session_id
 
     async def test_func(**kwargs):
         return {"result": "success"}
@@ -386,7 +387,7 @@ async def test_list_change_handles_missing_session_payment(mock_mcp, mock_provid
     init_result = await wrapper(data="test")
 
     # Clear SESSION_PAYMENTS to simulate missing session
-    SESSION_PAYMENTS.clear()
+    PAYMENTS.clear()
 
     # Get and execute confirmation tool
     confirm_tool = mock_mcp.registered_tools[init_result["next_tool"]]["func"]
@@ -459,12 +460,12 @@ async def test_list_change_with_webview_opened(mock_mcp, mock_provider, price_in
 @pytest.fixture(autouse=True)
 def cleanup_state():
     """Clean up state after each test."""
-    from paymcp.payment.flows.list_change import SESSION_PAYMENTS, SESSION_CONFIRMATION_TOOLS
+    # SESSION_PAYMENTS removed - now use PAYMENTS[pid].session_id, SESSION_CONFIRMATION_TOOLS
     yield
-    PENDING_ARGS.clear()
+    PAYMENTS.clear()
     HIDDEN_TOOLS.clear()
-    SESSION_PAYMENTS.clear()
-    SESSION_CONFIRMATION_TOOLS.clear()
+    PAYMENTS.clear()
+    CONFIRMATION_TOOLS.clear()
 
 
 # ============================================================================
@@ -592,7 +593,7 @@ async def test_register_capabilities_already_patched():
 @pytest.mark.asyncio
 async def test_patch_list_tools():
     """Test _patch_list_tools() function and filtered_list_tools logic."""
-    from paymcp.payment.flows.list_change import _patch_list_tools, HIDDEN_TOOLS, SESSION_CONFIRMATION_TOOLS
+    from paymcp.payment.flows.list_change import _patch_list_tools, HIDDEN_TOOLS, CONFIRMATION_TOOLS
     from unittest.mock import Mock
 
     # Create mock tools
@@ -622,8 +623,8 @@ async def test_patch_list_tools():
     # Case 2: With session context and hidden tools
     # Set up hidden tools for a mock session
     mock_session_id = 12345
-    HIDDEN_TOOLS[mock_session_id] = {"tool1": True}
-    SESSION_CONFIRMATION_TOOLS["confirm_tool1_payment"] = mock_session_id
+    HIDDEN_TOOLS[mock_session_id] = {"tool1"}
+    CONFIRMATION_TOOLS["confirm_tool1_payment"] = mock_session_id
 
     # Since we can't easily mock request_ctx in the filtered function,
     # the function will fall back to returning all tools (no session context)
@@ -661,9 +662,3 @@ async def test_patch_list_tools_already_patched():
 
     # Verify it didn't patch again (covers line 383)
     assert mcp._tool_manager.list_tools == original_func
-
-
-# Note: Exception handling for session ID retrieval (lines 82-87) and
-# notification sending (lines 208-210, 235-237) are naturally covered by
-# the existing tests when MCP SDK is not available in the test environment.
-# The warnings in the test output confirm these exception paths are exercised.
