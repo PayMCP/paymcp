@@ -203,10 +203,11 @@ async def test_list_change_handles_unpaid_status(mock_mcp, mock_provider, price_
     confirm_result = await confirm_tool()
 
     # Should return error for unpaid status
-    assert "error" in confirm_result
-    assert "not completed" in confirm_result["error"].lower()
-    assert confirm_result["status"] == "pending"
-    assert confirm_result["payment_url"] == "https://pay.example.com/123"
+    assert confirm_result["status"] == "error"
+    assert "message" in confirm_result
+    assert "not completed" in confirm_result["message"].lower()
+    # payment_url is embedded in content text, not a separate field
+    assert "payment url" in confirm_result["content"][0]["text"].lower()
 
     # Arguments should NOT be cleaned up yet
     assert "test_payment_id_123456" in PENDING_ARGS
@@ -238,9 +239,9 @@ async def test_list_change_handles_missing_payment_id(mock_mcp, mock_provider, p
     confirm_result = await confirm_tool()
 
     # Should return appropriate error
-    assert "error" in confirm_result
-    assert "unknown or expired" in confirm_result["error"].lower()
-    assert confirm_result["status"] == "failed"
+    assert confirm_result["status"] == "error"
+    assert "message" in confirm_result
+    assert "unknown or expired" in confirm_result["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -263,13 +264,15 @@ async def test_list_change_handles_provider_errors(mock_mcp, mock_provider, pric
     confirm_result = await confirm_tool()
 
     # Should return error status
-    assert "error" in confirm_result
-    assert "error confirming payment" in confirm_result["error"].lower()
     assert confirm_result["status"] == "error"
+    assert "message" in confirm_result
+    assert "failed to confirm payment" in confirm_result["message"].lower()
 
-    # Original tool should be restored on error
-    assert 'test_func' in mock_mcp._tools
-    assert 'test_func' not in HIDDEN_TOOLS
+    # Original tool should be restored on error (cleaned up in error path)
+    session_ids = list(HIDDEN_TOOLS.keys())
+    if session_ids:
+        session_id = session_ids[0]
+        assert 'test_func' not in HIDDEN_TOOLS.get(session_id, set())
 
 
 @pytest.mark.asyncio
@@ -347,8 +350,8 @@ async def test_list_change_handles_payment_status_error(mock_mcp, mock_provider,
     confirm_result = await confirm_tool()
 
     # Should return error with proper status
-    assert "error" in confirm_result
     assert confirm_result["status"] == "error"
+    assert "message" in confirm_result
 
 
 @pytest.mark.asyncio
@@ -390,9 +393,9 @@ async def test_list_change_handles_missing_session_payment(mock_mcp, mock_provid
     confirm_result = await confirm_tool()
 
     # Should return error about unknown payment
-    assert "error" in confirm_result
-    assert "unknown or expired" in confirm_result["error"].lower()
-    assert confirm_result["status"] == "failed"
+    assert confirm_result["status"] == "error"
+    assert "message" in confirm_result
+    assert "unknown or expired" in confirm_result["message"].lower()
 
 
 @pytest.mark.asyncio

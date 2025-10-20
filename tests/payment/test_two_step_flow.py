@@ -168,9 +168,14 @@ class TestTwoStepFlow:
 
         make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
 
-        # Test with unknown payment ID
-        with pytest.raises(RuntimeError, match="Unknown or expired payment_id"):
-            await confirm_func("unknown_payment_id")
+        # Test with unknown payment ID - should return error object
+        result = await confirm_func("unknown_payment_id")
+
+        # Verify error response structure
+        assert result["status"] == "error"
+        assert result["message"] == "Unknown or expired payment_id"
+        assert result["payment_id"] == "unknown_payment_id"
+        assert "Unknown or expired payment_id" in result["content"][0]["text"]
 
         # Verify original function was not called
         mock_func.assert_not_called()
@@ -198,9 +203,14 @@ class TestTwoStepFlow:
         # Set provider to return unpaid status
         mock_provider.get_payment_status.return_value = "pending"
 
-        # Test the confirm step
-        with pytest.raises(RuntimeError, match="Payment status is pending, expected 'paid'"):
-            await confirm_func("payment_123")
+        # Test the confirm step - should return error object
+        result = await confirm_func("payment_123")
+
+        # Verify error response structure
+        assert result["status"] == "error"
+        assert result["message"] == "Payment status is pending, expected 'paid'"
+        assert result["payment_id"] == "payment_123"
+        assert "Payment status is pending" in result["content"][0]["text"]
 
         # Verify original function was not called
         mock_func.assert_not_called()
