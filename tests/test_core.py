@@ -1,7 +1,6 @@
 """Tests for the paymcp.core module."""
 
 import pytest
-import sys
 from importlib import reload
 from unittest.mock import Mock, MagicMock, patch
 from paymcp.core import PayMCP
@@ -240,8 +239,8 @@ class TestPayMCP:
         mock_wrapper_factory = Mock()
         paymcp._wrapper_factory = mock_wrapper_factory
 
-        # Call the tool decorator
-        result = paymcp.mcp.tool(normal_tool)
+        # Call the tool decorator (result not used, just checking side effect)
+        _ = paymcp.mcp.tool(normal_tool)
 
         # Verify wrapper factory was NOT called (no price info)
         assert not mock_wrapper_factory.called

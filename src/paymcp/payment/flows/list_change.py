@@ -10,8 +10,7 @@ If SDK adds hooks/filters, we can remove patches and use official APIs.
 import functools
 import uuid
 from typing import Dict, Any, Set, NamedTuple
-from ...utils.messages import open_link_message, opened_webview_message
-from ..webview import open_payment_webview_if_available
+from ...utils.messages import open_link_message
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,20 +25,6 @@ HIDDEN_TOOLS: Dict[str, Set[str]] = {}  # session_id -> {hidden_tool_names}
 CONFIRMATION_TOOLS: Dict[str, str] = {}  # confirm_tool_name -> session_id
 
 
-def _get_session_id() -> str:
-    """Get session ID from MCP context, fallback to UUID.
-
-    Uses request_ctx (official SDK pattern) to get session object.
-    Returns id(session) as unique identifier per connection.
-    Fallback to UUID for servers without session support.
-    """
-    try:
-        from mcp.server.lowlevel.server import request_ctx
-        return str(id(request_ctx.get().session))
-    except Exception:
-        return str(uuid.uuid4())
-
-
 async def _send_notification():
     """Send tools/list_changed notification, ignore failures.
 
@@ -51,6 +36,8 @@ async def _send_notification():
         await request_ctx.get().session.send_tool_list_changed()
         logger.info("[list_change] Sent tools/list_changed notification")
     except Exception:
+        # Ignore notification failures - notifications are optional and client may not support them
+        # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
         pass
 
 
@@ -68,7 +55,9 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
         )
 
         pid = str(payment_id)
-        session_id = _get_session_id()
+        # Extract session ID from ctx parameter
+        ctx = kwargs.get("ctx", None)
+        session_id = str(id(ctx.session)) if ctx and hasattr(ctx, 'session') and ctx.session else str(uuid.uuid4())
         confirm_name = f"confirm_{tool_name}_{pid}"
 
         # Store state: payment session, hide tool, track confirm tool
@@ -82,9 +71,9 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
             ps = PAYMENTS.get(pid)
             if not ps:
                 return {
-                    "content": [{"type": "text", "text": f"Unknown or expired payment_id: {pid}"}],
+                    "content": [{"type": "text", "text": f"Inform user: Payment session {pid} is unknown or has expired. They may need to initiate a new payment."}],
                     "status": "error",
-                    "message": "Unknown or expired payment_id",
+                    "message": "Payment session unknown or expired - inform user to start new payment",
                     "payment_id": pid
                 }
 
@@ -92,9 +81,9 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
                 status = provider.get_payment_status(payment_id)
                 if status != "paid":
                     return {
-                        "content": [{"type": "text", "text": f"Payment not completed. Status: {status}\\nPayment URL: {payment_url}"}],
+                        "content": [{"type": "text", "text": f"Inform user: Payment not yet completed. Current status: {status}. Ask them to complete payment at: {payment_url}"}],
                         "status": "error",
-                        "message": f"Payment status is {status}, expected 'paid'",
+                        "message": f"Payment status '{status}' - ask user to complete payment",
                         "payment_id": pid
                     }
 
@@ -123,22 +112,21 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
                     if not HIDDEN_TOOLS[ps.session_id]:
                         del HIDDEN_TOOLS[ps.session_id]
                 return {
-                    "content": [{"type": "text", "text": f"Error confirming payment: {str(e)}"}],
+                    "content": [{"type": "text", "text": f"Inform user: Unable to verify payment status due to technical error: {str(e)}. Ask them to retry or contact support."}],
                     "status": "error",
-                    "message": "Failed to confirm payment",
+                    "message": "Technical error checking payment - inform user to retry or contact support",
                     "payment_id": pid
                 }
 
         await _send_notification()
 
-        # Return payment response
-        msg_fn = opened_webview_message if open_payment_webview_if_available(payment_url) else open_link_message
+        # Return payment response (webview removed - STDIO not supported)
         return {
-            "message": msg_fn(payment_url, price_info["price"], price_info["currency"]),
+            "message": open_link_message(payment_url, price_info["price"], price_info["currency"]),
             "payment_url": payment_url,
             "payment_id": pid,
             "next_tool": confirm_name,
-            "instructions": f"Complete payment at {payment_url}, then call {confirm_name}"
+            "instructions": f"Ask user to complete payment at {payment_url}, then call {confirm_name}"
         }
 
     return _initiate_wrapper

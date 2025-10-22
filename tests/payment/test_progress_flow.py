@@ -1,7 +1,6 @@
 """Tests for the PROGRESS payment flow."""
 
 import pytest
-import asyncio
 from unittest.mock import Mock, AsyncMock, patch
 from paymcp.payment.flows.progress import make_paid_wrapper, DEFAULT_POLL_SECONDS, MAX_WAIT_SECONDS
 from paymcp.providers.base import BasePaymentProvider

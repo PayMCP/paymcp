@@ -1,6 +1,6 @@
 """Tests for LIST_CHANGE payment flow."""
 import pytest
-from unittest.mock import MagicMock, AsyncMock, call
+from unittest.mock import MagicMock, AsyncMock
 from paymcp.payment.flows.list_change import make_paid_wrapper, PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS
 
 
@@ -206,9 +206,11 @@ async def test_list_change_handles_unpaid_status(mock_mcp, mock_provider, price_
     # Should return error for unpaid status
     assert confirm_result["status"] == "error"
     assert "message" in confirm_result
-    assert "expected 'paid'" in confirm_result["message"].lower() or "status is pending" in confirm_result["message"].lower()
+    # Updated to match new AI-friendly message format
+    assert "ask user to complete payment" in confirm_result["message"].lower()
+    assert "pending" in confirm_result["message"].lower()
     # payment_url is embedded in content text, not a separate field
-    assert "payment url" in confirm_result["content"][0]["text"].lower()
+    assert "payment url" in confirm_result["content"][0]["text"].lower() or "complete payment at:" in confirm_result["content"][0]["text"].lower()
 
     # Arguments should NOT be cleaned up yet
     assert "test_payment_id_123456" in PAYMENTS
@@ -365,8 +367,8 @@ async def test_list_change_removes_price_attribute(mock_mcp, mock_provider, pric
     test_func._paymcp_price_info = price_info.copy()
     assert hasattr(test_func, '_paymcp_price_info')
 
-    # Wrap with LIST_CHANGE flow
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    # Wrap with LIST_CHANGE flow (wrapper not used, just checking side effect)
+    _ = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
 
     # Attribute should be removed to prevent re-wrapping
     assert not hasattr(test_func, '_paymcp_price_info')
@@ -429,32 +431,6 @@ async def test_list_change_deletes_confirmation_tool(mock_mcp, mock_provider, pr
 
     # Confirmation tool should be deleted from _tools dict
     assert confirm_tool_name not in mock_mcp._tool_manager._tools
-
-
-@pytest.mark.asyncio
-async def test_list_change_with_webview_opened(mock_mcp, mock_provider, price_info, monkeypatch):
-    """Test payment initiation when webview opens successfully."""
-    from paymcp.payment.flows import list_change
-
-    # Mock webview to return True (successfully opened)
-    # Must patch in list_change module since it imports the function directly
-    monkeypatch.setattr(list_change, 'open_payment_webview_if_available', lambda url: True)
-
-    async def test_func(**kwargs):
-        return {"result": "success"}
-
-    mock_mcp._tools['test_func'] = test_func
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
-
-    # Initiate payment
-    result = await wrapper(data="test")
-
-    # Should return result with webview opened message
-    assert "payment_url" in result
-    assert "message" in result
-    # Verify the message indicates webview was opened (contains webview-specific text)
-    assert "payment window should be open" in result["message"].lower()
-    # This tests line 243 in list_change.py (opened_webview_message path)
 
 
 @pytest.fixture(autouse=True)
