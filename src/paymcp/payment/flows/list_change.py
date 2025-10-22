@@ -25,20 +25,20 @@ HIDDEN_TOOLS: Dict[str, Set[str]] = {}  # session_id -> {hidden_tool_names}
 CONFIRMATION_TOOLS: Dict[str, str] = {}  # confirm_tool_name -> session_id
 
 
-async def _send_notification():
+async def _send_notification(ctx):
     """Send tools/list_changed notification, ignore failures.
 
     Uses request_ctx.session.send_tool_list_changed() - official SDK method.
     Failures ignored because notifications are optional (client may not support).
     """
-    try:
-        from mcp.server.lowlevel.server import request_ctx
-        await request_ctx.get().session.send_tool_list_changed()
-        logger.info("[list_change] Sent tools/list_changed notification")
-    except Exception:
-        # Ignore notification failures - notifications are optional and client may not support them
-        # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
-        pass
+    if (ctx):
+        try:
+            await ctx.session.send_tool_list_changed()
+            logger.info("[list_change] Sent tools/list_changed notification")
+        except Exception:
+            # Ignore notification failures - notifications are optional and client may not support them
+            # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
+            pass
 
 
 def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
@@ -102,7 +102,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
                     del mcp._tool_manager._tools[confirm_name]
                 CONFIRMATION_TOOLS.pop(confirm_name, None)
 
-                await _send_notification()
+                await _send_notification(ctx)
                 return result
 
             except Exception as e:
@@ -118,7 +118,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
                     "payment_id": pid
                 }
 
-        await _send_notification()
+        await _send_notification(ctx)
 
         # Return payment response (webview removed - STDIO not supported)
         return {
@@ -154,8 +154,11 @@ def _register_capabilities(mcp, payment_flow):
     orig = mcp._mcp_server.create_initialization_options
 
     def patched(notification_options=None, experimental_caps=None):
-        from mcp.server.lowlevel.server import NotificationOptions
-        notification_options = notification_options or NotificationOptions(tools_changed=True)
+        srv = mcp._mcp_server
+        notification_options = srv.notification_options 
+        notification_options.tools_changed = True
+        notification_options.prompts_changed = True
+        notification_options.resources_changed = True
         notification_options.tools_changed = True
         return orig(notification_options, {'elicitation': {'enabled': True}, **(experimental_caps or {})})
 
@@ -182,15 +185,18 @@ def _patch_list_tools(mcp):
 
     def filtered():
         tools = orig()
-        # WHY: Use request_ctx to get session ID - this IS the official SDK pattern
-        # request_ctx is a ContextVar that tracks current request's session object
+        # WHY: Use the server's public request_context to get the session ID
+        # request_context is a stable property that wraps the SDK's internal ContextVar
         # We use id(session) because session objects are reused per connection
-        # SDK PR: Not needed - this is correct usage per SDK design
+        # This avoids importing low-level symbols like request_ctx
         try:
-            from mcp.server.lowlevel.server import request_ctx
-            sid = id(request_ctx.get().session)
-        except Exception:
+            # Use the public Server.request_context property to fetch the current session
+            # Avoids importing request_ctx from low-level internals.
+            sid = id(mcp._mcp_server.request_context.session)
+        except LookupError:
             return tools  # No session context (e.g., during testing)
+        except Exception:
+            return tools
 
         hidden = HIDDEN_TOOLS.get(sid, set())
         return [t for t in tools if t.name not in hidden and (t.name not in CONFIRMATION_TOOLS or CONFIRMATION_TOOLS[t.name] == sid)]
