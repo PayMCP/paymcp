@@ -156,7 +156,10 @@ class TestPayMCP:
     def test_version_exception_handling_module_import(self):
         """Test version exception handling when package not found at module import time."""
         from importlib.metadata import PackageNotFoundError
-        import paymcp.core as core_module
+        import sys
+
+        # Get module reference from sys.modules to avoid duplicate import styles
+        core_module = sys.modules['paymcp.core']
 
         # Save original version
         original_version = core_module.__version__
