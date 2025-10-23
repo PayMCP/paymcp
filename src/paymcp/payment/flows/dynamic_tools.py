@@ -187,7 +187,7 @@ def _defer_list_tools_patch(mcp):
 
     def wrapped_tool(*args, **kwargs):
         """Wrap mcp.tool() to trigger deferred patch after registration."""
-        result = original_tool(*args, **kwargs)
+        result = original_tool_decorator(*args, **kwargs)
 
         # After first tool is registered, _tool_manager should exist
         if hasattr(mcp, '_tool_manager') and not hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):

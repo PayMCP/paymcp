@@ -294,3 +294,61 @@ class TestTwoStepFlow:
             assert mock_logger.info.called
             info_calls = mock_logger.info.call_args_list
             assert any("payment_id=payment_123" in str(call) for call in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_confirm_step_empty_payment_id(
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
+    ):
+        """Test the confirmation step with empty payment ID."""
+        # Capture the confirm function when tool decorator is called
+        confirm_func = None
+        def capture_tool(*args, **kwargs):
+            def decorator(func):
+                nonlocal confirm_func
+                confirm_func = func
+                return func
+            return decorator
+
+        mock_mcp.tool = capture_tool
+
+        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+
+        # Test with empty string payment ID - should return error object (covers line 30)
+        result = await confirm_func("")
+
+        # Verify error response structure
+        assert result["status"] == "error"
+        assert result["message"] == "Missing payment_id"
+        assert "Missing payment_id" in result["content"][0]["text"]
+
+        # Verify original function was not called
+        mock_func.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_confirm_step_none_payment_id(
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
+    ):
+        """Test the confirmation step with None payment ID."""
+        # Capture the confirm function when tool decorator is called
+        confirm_func = None
+        def capture_tool(*args, **kwargs):
+            def decorator(func):
+                nonlocal confirm_func
+                confirm_func = func
+                return func
+            return decorator
+
+        mock_mcp.tool = capture_tool
+
+        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+
+        # Test with None payment ID - should return error object (covers line 30)
+        result = await confirm_func(None)
+
+        # Verify error response structure
+        assert result["status"] == "error"
+        assert result["message"] == "Missing payment_id"
+        assert "Missing payment_id" in result["content"][0]["text"]
+
+        # Verify original function was not called
+        mock_func.assert_not_called()
