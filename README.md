@@ -12,7 +12,7 @@ See the [full documentation](https://paymcp.info).
 
 - ✅ Add `@price(...)` decorators to your MCP tools to enable payments
 - 🔁 Choose between different payment flows (elicit, progress, dynamic_tools, etc.)
-- 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface to add your own.
+- 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface for custom providers.
 - ⚙️ Easy integration with `FastMCP` or other MCP servers
 
 
@@ -80,6 +80,28 @@ All flows require the MCP client to support the corresponding interaction patter
 
 ---
 
+## 🗄️ State Storage 
+
+By default, when using the `TWO_STEP` payment flow, PayMCP stores pending tool arguments (for confirming payment) **in memory** using a process-local `Map`. This is **not durable** and will not work across server restarts or multiple server instances (no horizontal scaling).
+
+To enable durable and scalable state storage, you can provide a custom `StateStore` implementation. PayMCP includes a built-in `RedisStateStore`, which works with any Redis-compatible client.
+
+```python
+from redis.asyncio import from_url
+from paymcp import PayMCP, RedisStateStore
+
+redis = await from_url("redis://localhost:6379")
+PayMCP(
+    mcp,
+    providers=[
+        StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
+    ],
+    state_store=RedisStateStore(redis)
+)
+```
+
+---
+
 ## 🧩 Supported Providers
 
 Built-in support is available for the following providers. You can also [write a custom provider](#writing-a-custom-provider).
@@ -114,28 +136,8 @@ PayMCP(mcp, providers=[MyProvider(api_key="...")])
 ```
 
 
-## 🗄️ State Storage 
-
-By default, when using the `TWO_STEP` payment flow, PayMCP stores pending tool arguments (for confirming payment) **in memory** using a process-local `Map`. This is **not durable** and will not work across server restarts or multiple server instances (no horizontal scaling).
-
-To enable durable and scalable state storage, you can provide a custom `StateStore` implementation. PayMCP includes a built-in `RedisStateStore`, which works with any Redis-compatible client.
-
-```python
-from redis.asyncio import from_url
-from paymcp import PayMCP, RedisStateStore
-
-redis = await from_url("redis://localhost:6379")
-PayMCP(
-    mcp,
-    providers=[
-        StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
-    ],
-    state_store=RedisStateStore(redis)
-)
-```
-
 ---
 
 ## 📄 License
 
-MIT License
+[MIT License](./LICENSE)
