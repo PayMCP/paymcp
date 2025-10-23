@@ -27,8 +27,11 @@ Initialize `PayMCP`:
 
 ```python
 import os
-from paymcp import PaymentFlow
+from mcp.server.fastmcp import FastMCP, Context
+from paymcp import PaymentFlow, price
 from paymcp.providers import StripeProvider
+
+mcp = FastMCP("AI agent name")
 
 PayMCP(
     mcp,
