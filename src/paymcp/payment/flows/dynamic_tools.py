@@ -1,4 +1,4 @@
-"""LIST_CHANGE flow: dynamically hide/show tools per-session during payment.
+"""DYNAMIC_TOOLS flow: dynamically hide/show tools per-session during payment.
 
 MCP SDK Compatibility: This implementation patches MCP SDK internals because:
 1. SDK has no post-init capability registration API (v1.x)
@@ -31,14 +31,14 @@ async def _send_notification(ctx):
     Uses request_ctx.session.send_tool_list_changed() - official SDK method.
     Failures ignored because notifications are optional (client may not support).
     """
-    if (ctx):
-        try:
-            await ctx.session.send_tool_list_changed()
-            logger.info("[list_change] Sent tools/list_changed notification")
-        except Exception:
-            # Ignore notification failures - notifications are optional and client may not support them
-            # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
-            pass
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+        await request_ctx.get().session.send_tool_list_changed()
+        logger.info("[dynamic_tools] Sent tools/list_changed notification")
+    except Exception:
+        # Ignore notification failures - notifications are optional and client may not support them
+        # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
+        pass
 
 
 def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
@@ -148,7 +148,7 @@ def _register_capabilities(mcp, payment_flow):
     SDK PR: Not submitted - this is payment flow specific, not SDK's concern.
     The SDK correctly provides tools_changed capability; we just need to enable it.
     """
-    if not hasattr(mcp, '_mcp_server') or hasattr(mcp._mcp_server.create_initialization_options, '_paymcp_list_change_patched'):
+    if not hasattr(mcp, '_mcp_server') or hasattr(mcp._mcp_server.create_initialization_options, '_paymcp_dynamic_tools_patched'):
         return
 
     orig = mcp._mcp_server.create_initialization_options
@@ -162,7 +162,7 @@ def _register_capabilities(mcp, payment_flow):
         notification_options.tools_changed = True
         return orig(notification_options, {'elicitation': {'enabled': True}, **(experimental_caps or {})})
 
-    patched._paymcp_list_change_patched = True
+    patched._paymcp_dynamic_tools_patched = True
     mcp._mcp_server.create_initialization_options = patched
 
 
@@ -178,7 +178,7 @@ def _patch_list_tools(mcp):
     However, this is payment-specific logic. SDK should stay generic.
     Current approach: well-isolated, documented, and testable monkey-patch.
     """
-    if not hasattr(mcp, '_tool_manager') or hasattr(mcp._tool_manager.list_tools, '_paymcp_list_change_patched'):
+    if not hasattr(mcp, '_tool_manager') or hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
         return
 
     orig = mcp._tool_manager.list_tools
@@ -201,5 +201,5 @@ def _patch_list_tools(mcp):
         hidden = HIDDEN_TOOLS.get(sid, set())
         return [t for t in tools if t.name not in hidden and (t.name not in CONFIRMATION_TOOLS or CONFIRMATION_TOOLS[t.name] == sid)]
 
-    filtered._paymcp_list_change_patched = True
+    filtered._paymcp_dynamic_tools_patched = True
     mcp._tool_manager.list_tools = filtered

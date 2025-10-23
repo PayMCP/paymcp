@@ -1,7 +1,7 @@
-"""Tests for LIST_CHANGE payment flow."""
+"""Tests for DYNAMIC_TOOLS payment flow."""
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from paymcp.payment.flows.list_change import make_paid_wrapper, PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS
+from paymcp.payment.flows.dynamic_tools import make_paid_wrapper, PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS
 
 
 @pytest.fixture
@@ -44,8 +44,8 @@ def price_info():
 
 
 @pytest.mark.asyncio
-async def test_list_change_hides_original_tool_on_payment(mock_mcp, mock_provider, price_info):
-    """Test that LIST_CHANGE hides original tool when payment is initiated."""
+async def test_dynamic_tools_hides_original_tool_on_payment(mock_mcp, mock_provider, price_info):
+    """Test that DYNAMIC_TOOLS hides original tool when payment is initiated."""
     # Create a test function
     async def test_func(**kwargs):
         return {"result": "success", "args": kwargs}
@@ -53,7 +53,7 @@ async def test_list_change_hides_original_tool_on_payment(mock_mcp, mock_provide
     # Add original tool to mock MCP
     mock_mcp._tools['test_func'] = test_func
 
-    # Wrap with LIST_CHANGE flow
+    # Wrap with DYNAMIC_TOOLS flow
     wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
 
     # Initially, original tool should be visible
@@ -94,8 +94,8 @@ async def test_list_change_hides_original_tool_on_payment(mock_mcp, mock_provide
 
 
 @pytest.mark.asyncio
-async def test_list_change_restores_tool_after_payment(mock_mcp, mock_provider, price_info):
-    """Test that LIST_CHANGE restores original tool after payment confirmation."""
+async def test_dynamic_tools_restores_tool_after_payment(mock_mcp, mock_provider, price_info):
+    """Test that DYNAMIC_TOOLS restores original tool after payment confirmation."""
     # Create a test function
     async def test_func(**kwargs):
         return {"result": "executed", "input": kwargs.get("data")}
@@ -103,7 +103,7 @@ async def test_list_change_restores_tool_after_payment(mock_mcp, mock_provider, 
     # Add original tool to mock MCP
     mock_mcp._tools['test_func'] = test_func
 
-    # Wrap with LIST_CHANGE flow
+    # Wrap with DYNAMIC_TOOLS flow
     wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
 
     # Initiate payment
@@ -145,7 +145,7 @@ async def test_list_change_restores_tool_after_payment(mock_mcp, mock_provider, 
 
 
 @pytest.mark.asyncio
-async def test_list_change_unique_confirmation_per_payment(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_unique_confirmation_per_payment(mock_mcp, mock_provider, price_info):
     """Test that each payment gets a unique confirmation tool."""
     # Setup provider to return different payment IDs
     payment_ids = ["abc12345xyz", "def67890uvw"]
@@ -185,7 +185,7 @@ async def test_list_change_unique_confirmation_per_payment(mock_mcp, mock_provid
 
 
 @pytest.mark.asyncio
-async def test_list_change_handles_unpaid_status(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_handles_unpaid_status(mock_mcp, mock_provider, price_info):
     """Test that confirmation tool handles unpaid payment status correctly."""
     mock_provider.get_payment_status = MagicMock(return_value="pending")
 
@@ -222,7 +222,7 @@ async def test_list_change_handles_unpaid_status(mock_mcp, mock_provider, price_
 
 
 @pytest.mark.asyncio
-async def test_list_change_handles_missing_payment_id(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_handles_missing_payment_id(mock_mcp, mock_provider, price_info):
     """Test that confirmation tool handles missing payment ID gracefully."""
     async def test_func(**kwargs):
         return {"result": "success"}
@@ -248,7 +248,7 @@ async def test_list_change_handles_missing_payment_id(mock_mcp, mock_provider, p
 
 
 @pytest.mark.asyncio
-async def test_list_change_handles_provider_errors(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_handles_provider_errors(mock_mcp, mock_provider, price_info):
     """Test that confirmation tool handles provider errors gracefully."""
     mock_provider.get_payment_status = MagicMock(side_effect=Exception("Provider API error"))
 
@@ -278,8 +278,8 @@ async def test_list_change_handles_provider_errors(mock_mcp, mock_provider, pric
 
 
 @pytest.mark.asyncio
-async def test_list_change_without_send_notification(mock_mcp, mock_provider, price_info):
-    """Test LIST_CHANGE works even if server doesn't support notifications."""
+async def test_dynamic_tools_without_send_notification(mock_mcp, mock_provider, price_info):
+    """Test DYNAMIC_TOOLS works even if server doesn't support notifications."""
     # Remove notification method
     del mock_mcp._send_notification
 
@@ -301,7 +301,7 @@ async def test_list_change_without_send_notification(mock_mcp, mock_provider, pr
 
 
 @pytest.mark.asyncio
-async def test_list_change_context_extraction_from_args(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_context_extraction_from_args(mock_mcp, mock_provider, price_info):
     """Test context extraction from positional arguments."""
     from unittest.mock import Mock
 
@@ -323,17 +323,17 @@ async def test_list_change_context_extraction_from_args(mock_mcp, mock_provider,
 
 
 @pytest.mark.asyncio
-async def test_list_change_handles_missing_session_context(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_handles_missing_session_context(mock_mcp, mock_provider, price_info):
     """Test handling of missing session context (uses UUID fallback)."""
     # NOTE: This test is complex to mock properly due to MCP SDK internals.
     # The UUID fallback logic is tested in integration tests instead.
-    # Coverage lines 82-87 in list_change.py (session context exception handling)
+    # Coverage lines 82-87 in dynamic_tools.py (session context exception handling)
     # are reached in real server scenarios but difficult to mock in unit tests.
     pass
 
 
 @pytest.mark.asyncio
-async def test_list_change_handles_payment_status_error(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_handles_payment_status_error(mock_mcp, mock_provider, price_info):
     """Test handling of payment status check exceptions during confirmation."""
     async def test_func(**kwargs):
         return {"result": "success"}
@@ -358,7 +358,7 @@ async def test_list_change_handles_payment_status_error(mock_mcp, mock_provider,
 
 
 @pytest.mark.asyncio
-async def test_list_change_removes_price_attribute(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_removes_price_attribute(mock_mcp, mock_provider, price_info):
     """Test that _paymcp_price_info attribute is removed from wrapped function."""
     async def test_func(**kwargs):
         return {"result": "success"}
@@ -367,7 +367,7 @@ async def test_list_change_removes_price_attribute(mock_mcp, mock_provider, pric
     test_func._paymcp_price_info = price_info.copy()
     assert hasattr(test_func, '_paymcp_price_info')
 
-    # Wrap with LIST_CHANGE flow (wrapper not used, just checking side effect)
+    # Wrap with DYNAMIC_TOOLS flow (wrapper not used, just checking side effect)
     _ = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
 
     # Attribute should be removed to prevent re-wrapping
@@ -375,7 +375,7 @@ async def test_list_change_removes_price_attribute(mock_mcp, mock_provider, pric
 
 
 @pytest.mark.asyncio
-async def test_list_change_handles_missing_session_payment(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_handles_missing_session_payment(mock_mcp, mock_provider, price_info):
     """Test confirmation tool when payment ID not found in SESSION_PAYMENTS."""
     # SESSION_PAYMENTS removed - now use PAYMENTS[pid].session_id
 
@@ -402,7 +402,7 @@ async def test_list_change_handles_missing_session_payment(mock_mcp, mock_provid
 
 
 @pytest.mark.asyncio
-async def test_list_change_deletes_confirmation_tool(mock_mcp, mock_provider, price_info):
+async def test_dynamic_tools_deletes_confirmation_tool(mock_mcp, mock_provider, price_info):
     """Test that confirmation tool is properly deleted after successful payment."""
     async def test_func(**kwargs):
         return {"result": "executed"}
@@ -452,7 +452,7 @@ def cleanup_state():
 async def test_setup_flow_integration(mock_provider, price_info):
     """Test setup_flow() integration with PayMCP initialization."""
     from paymcp import PayMCP, PaymentFlow
-    from paymcp.payment.flows.list_change import setup_flow
+    from paymcp.payment.flows.dynamic_tools import setup_flow
     from unittest.mock import Mock
 
     # Create a mock MCP instance with necessary attributes
@@ -468,7 +468,7 @@ async def test_setup_flow_integration(mock_provider, price_info):
     paymcp.mcp = mcp
 
     # Call setup_flow (this covers lines 299-305)
-    setup_flow(mcp, paymcp, PaymentFlow.LIST_CHANGE)
+    setup_flow(mcp, paymcp, PaymentFlow.DYNAMIC_TOOLS)
 
     # Verify patching occurred (indirectly - we can't easily verify internal state)
     # The test coverage will confirm these lines were executed
@@ -477,7 +477,7 @@ async def test_setup_flow_integration(mock_provider, price_info):
 @pytest.mark.asyncio
 async def test_register_capabilities(mock_provider):
     """Test _register_capabilities() function and patched create_initialization_options."""
-    from paymcp.payment.flows.list_change import _register_capabilities
+    from paymcp.payment.flows.dynamic_tools import _register_capabilities
     from paymcp import PaymentFlow
     from unittest.mock import Mock, patch
     import sys
@@ -503,10 +503,10 @@ async def test_register_capabilities(mock_provider):
         mcp._mcp_server.create_initialization_options = mock_create_init_options
 
         # Call _register_capabilities (covers lines 316-359)
-        _register_capabilities(mcp, PaymentFlow.LIST_CHANGE)
+        _register_capabilities(mcp, PaymentFlow.DYNAMIC_TOOLS)
 
         # Verify patching occurred
-        assert hasattr(mcp._mcp_server.create_initialization_options, '_paymcp_list_change_patched')
+        assert hasattr(mcp._mcp_server.create_initialization_options, '_paymcp_dynamic_tools_patched')
 
         # Now test the patched function by calling it (exercises lines 337-350)
         result = mcp._mcp_server.create_initialization_options()
@@ -534,7 +534,7 @@ async def test_register_capabilities(mock_provider):
 @pytest.mark.asyncio
 async def test_register_capabilities_no_mcp_server():
     """Test _register_capabilities() when _mcp_server attribute is missing."""
-    from paymcp.payment.flows.list_change import _register_capabilities
+    from paymcp.payment.flows.dynamic_tools import _register_capabilities
     from paymcp import PaymentFlow
     from unittest.mock import Mock
 
@@ -542,13 +542,13 @@ async def test_register_capabilities_no_mcp_server():
     mcp = Mock(spec=[])  # Empty spec - no attributes
 
     # Should not raise exception (covers line 319)
-    _register_capabilities(mcp, PaymentFlow.LIST_CHANGE)
+    _register_capabilities(mcp, PaymentFlow.DYNAMIC_TOOLS)
 
 
 @pytest.mark.asyncio
 async def test_register_capabilities_already_patched():
     """Test _register_capabilities() when already patched (guard against double-patching)."""
-    from paymcp.payment.flows.list_change import _register_capabilities
+    from paymcp.payment.flows.dynamic_tools import _register_capabilities
     from paymcp import PaymentFlow
     from unittest.mock import Mock
 
@@ -556,11 +556,11 @@ async def test_register_capabilities_already_patched():
     mcp = Mock()
     mcp._mcp_server = Mock()
     original_func = Mock(return_value={"test": "options"})
-    original_func._paymcp_list_change_patched = True  # Already patched
+    original_func._paymcp_dynamic_tools_patched = True  # Already patched
     mcp._mcp_server.create_initialization_options = original_func
 
     # Call _register_capabilities (should skip due to guard)
-    _register_capabilities(mcp, PaymentFlow.LIST_CHANGE)
+    _register_capabilities(mcp, PaymentFlow.DYNAMIC_TOOLS)
 
     # Verify it didn't patch again (covers line 326)
     assert mcp._mcp_server.create_initialization_options == original_func
@@ -569,7 +569,7 @@ async def test_register_capabilities_already_patched():
 @pytest.mark.asyncio
 async def test_patch_list_tools():
     """Test _patch_list_tools() function and filtered_list_tools logic."""
-    from paymcp.payment.flows.list_change import _patch_list_tools, HIDDEN_TOOLS, CONFIRMATION_TOOLS
+    from paymcp.payment.flows.dynamic_tools import _patch_list_tools, HIDDEN_TOOLS, CONFIRMATION_TOOLS
     from unittest.mock import Mock
 
     # Create mock tools
@@ -589,7 +589,7 @@ async def test_patch_list_tools():
     _patch_list_tools(mcp)
 
     # Verify patching occurred
-    assert hasattr(mcp._tool_manager.list_tools, '_paymcp_list_change_patched')
+    assert hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched')
 
     # Now test the filtered_list_tools logic by calling it
     # Case 1: No session context (should return all tools)
@@ -610,7 +610,7 @@ async def test_patch_list_tools():
 @pytest.mark.asyncio
 async def test_patch_list_tools_no_tool_manager():
     """Test _patch_list_tools() when _tool_manager attribute is missing."""
-    from paymcp.payment.flows.list_change import _patch_list_tools
+    from paymcp.payment.flows.dynamic_tools import _patch_list_tools
     from unittest.mock import Mock
 
     # Create mock MCP without _tool_manager
@@ -623,14 +623,14 @@ async def test_patch_list_tools_no_tool_manager():
 @pytest.mark.asyncio
 async def test_patch_list_tools_already_patched():
     """Test _patch_list_tools() when already patched (guard against double-patching)."""
-    from paymcp.payment.flows.list_change import _patch_list_tools
+    from paymcp.payment.flows.dynamic_tools import _patch_list_tools
     from unittest.mock import Mock
 
     # Create mock MCP with tool_manager
     mcp = Mock()
     mcp._tool_manager = Mock()
     original_func = Mock(return_value=[])
-    original_func._paymcp_list_change_patched = True  # Already patched
+    original_func._paymcp_dynamic_tools_patched = True  # Already patched
     mcp._tool_manager.list_tools = original_func
 
     # Call _patch_list_tools (should skip due to guard)

@@ -29,9 +29,9 @@ class PayMCP:
         self.state_store = state_store
         self._patch_tool()
 
-        # LIST_CHANGE flow requires patching MCP internals
-        if payment_flow == PaymentFlow.LIST_CHANGE:
-            from .payment.flows.list_change import setup_flow
+        # DYNAMIC_TOOLS flow requires patching MCP internals
+        if payment_flow == PaymentFlow.DYNAMIC_TOOLS:
+            from .payment.flows.dynamic_tools import setup_flow
             setup_flow(mcp_instance, self, payment_flow)
 
     def _patch_tool(self):

@@ -5,4 +5,4 @@ class PaymentFlow(str, Enum):
     PROGRESS = "progress"
     ELICITATION = "elicitation"
     OOB = "oob"
-    LIST_CHANGE = "list_change" 
+    DYNAMIC_TOOLS = "dynamic_tools" 
