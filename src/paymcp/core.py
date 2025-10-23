@@ -57,7 +57,16 @@ class PayMCP:
                 else:
                     target_func = func
 
-                return original_tool(*args, **kwargs)(target_func)
+                result = original_tool(*args, **kwargs)(target_func)
+
+                # Apply deferred DYNAMIC_TOOLS list_tools patch after first tool registration
+                if self.payment_flow == PaymentFlow.DYNAMIC_TOOLS:
+                    if hasattr(self.mcp, '_tool_manager'):
+                        if not hasattr(self.mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
+                            from .payment.flows.dynamic_tools import _patch_list_tools_immediate
+                            _patch_list_tools_immediate(self.mcp)
+
+                return result
             return wrapper
 
         self.mcp.tool = patched_tool

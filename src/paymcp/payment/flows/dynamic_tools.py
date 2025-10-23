@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 
 # State: payment_id -> (session_id, args)
 class PaymentSession(NamedTuple):
-    session_id: str
+    session_id: int  # Session object ID (integer for consistent lookup)
     args: Dict[str, Any]
 
 PAYMENTS: Dict[str, PaymentSession] = {}  # payment_id -> PaymentSession
-HIDDEN_TOOLS: Dict[str, Set[str]] = {}  # session_id -> {hidden_tool_names}
-CONFIRMATION_TOOLS: Dict[str, str] = {}  # confirm_tool_name -> session_id
+HIDDEN_TOOLS: Dict[int, Set[str]] = {}  # session_id (int) -> {hidden_tool_names}
+CONFIRMATION_TOOLS: Dict[str, int] = {}  # confirm_tool_name -> session_id (int)
 
 
 async def _send_notification(ctx):
@@ -55,15 +55,19 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
         )
 
         pid = str(payment_id)
-        # Extract session ID from ctx parameter
+        # Extract session ID from ctx parameter (use integer ID for consistency with filter)
         ctx = kwargs.get("ctx", None)
-        session_id = str(id(ctx.session)) if ctx and hasattr(ctx, 'session') and ctx.session else str(uuid.uuid4())
+        session_id = id(ctx.session) if ctx and hasattr(ctx, 'session') and ctx.session else uuid.uuid4().int
         confirm_name = f"confirm_{tool_name}_{pid}"
+
+        logger.info(f"[DYNAMIC_TOOLS] Payment initiated: tool={tool_name}, session={session_id}, payment_id={pid}")
 
         # Store state: payment session, hide tool, track confirm tool
         PAYMENTS[pid] = PaymentSession(session_id, kwargs)
         HIDDEN_TOOLS.setdefault(session_id, set()).add(tool_name)
         CONFIRMATION_TOOLS[confirm_name] = session_id
+
+        logger.info(f"[DYNAMIC_TOOLS] Hidden tools for session {session_id}: {HIDDEN_TOOLS.get(session_id, set())}")
 
         # Register confirmation tool
         @mcp.tool(name=confirm_name, description=f"Confirm payment {pid} and execute {tool_name}()")
@@ -154,16 +158,78 @@ def _register_capabilities(mcp, payment_flow):
     orig = mcp._mcp_server.create_initialization_options
 
     def patched(notification_options=None, experimental_caps=None):
-        srv = mcp._mcp_server
-        notification_options = srv.notification_options 
+        # Import NotificationOptions from MCP SDK
+        from mcp.server import NotificationOptions
+
+        # Create new NotificationOptions if not provided
+        if notification_options is None:
+            notification_options = NotificationOptions()
+
+        # Enable tool change notifications
         notification_options.tools_changed = True
         notification_options.prompts_changed = True
         notification_options.resources_changed = True
-        notification_options.tools_changed = True
+
         return orig(notification_options, {'elicitation': {'enabled': True}, **(experimental_caps or {})})
 
     patched._paymcp_dynamic_tools_patched = True
     mcp._mcp_server.create_initialization_options = patched
+
+
+def _defer_list_tools_patch(mcp):
+    """Defer list_tools patching until after first tool registration.
+
+    WHY: FastMCP lazy-initializes _tool_manager when first tool is registered.
+    If we try to patch before any tools exist, _tool_manager won't exist yet.
+    This wrapper ensures patching happens after the first tool is registered.
+    """
+    original_tool_decorator = mcp.tool
+
+    def wrapped_tool(*args, **kwargs):
+        """Wrap mcp.tool() to trigger deferred patch after registration."""
+        result = original_tool(*args, **kwargs)
+
+        # After first tool is registered, _tool_manager should exist
+        if hasattr(mcp, '_tool_manager') and not hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
+            logger.debug("First tool registered, applying deferred list_tools patch")
+            _patch_list_tools_immediate(mcp)
+
+        return result
+
+    wrapped_tool._paymcp_deferred_patch_applied = True
+    mcp.tool = wrapped_tool
+
+
+def _patch_list_tools_immediate(mcp):
+    """Immediately patch list_tools (called after _tool_manager exists)."""
+    if not hasattr(mcp, '_tool_manager'):
+        return  # Should not happen, but guard anyway
+
+    # Skip if already patched
+    if hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
+        return
+
+    orig = mcp._tool_manager.list_tools
+
+    def filtered():
+        tools = orig()
+        try:
+            sid = id(mcp._mcp_server.request_context.session)
+            logger.info(f"[DYNAMIC_TOOLS] Filtering tools for session {sid}, HIDDEN_TOOLS={dict(HIDDEN_TOOLS)}, CONFIRMATION_TOOLS={dict(CONFIRMATION_TOOLS)}")
+        except LookupError:
+            logger.info("[DYNAMIC_TOOLS] No session context (LookupError) - returning all tools")
+            return tools  # No session context
+        except Exception as e:
+            logger.info(f"[DYNAMIC_TOOLS] Session retrieval error: {e} - returning all tools")
+            return tools
+
+        hidden = HIDDEN_TOOLS.get(sid, set())
+        filtered_tools = [t for t in tools if t.name not in hidden and (t.name not in CONFIRMATION_TOOLS or CONFIRMATION_TOOLS[t.name] == sid)]
+        logger.info(f"[DYNAMIC_TOOLS] Session {sid}: {len(tools)} tools -> {len(filtered_tools)} after filtering (hidden={hidden})")
+        return filtered_tools
+
+    filtered._paymcp_dynamic_tools_patched = True
+    mcp._tool_manager.list_tools = filtered
 
 
 def _patch_list_tools(mcp):
@@ -178,7 +244,16 @@ def _patch_list_tools(mcp):
     However, this is payment-specific logic. SDK should stay generic.
     Current approach: well-isolated, documented, and testable monkey-patch.
     """
-    if not hasattr(mcp, '_tool_manager') or hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
+    # If _tool_manager doesn't exist yet, defer patching until first tool registered
+    if not hasattr(mcp, '_tool_manager'):
+        logger.debug("_tool_manager not found, will retry after tool registration")
+        # Patch the tool registration to apply list_tools patch after first tool
+        if hasattr(mcp, 'tool') and not hasattr(mcp.tool, '_paymcp_deferred_patch_applied'):
+            _defer_list_tools_patch(mcp)
+        return
+
+    # Skip if already patched (idempotent)
+    if hasattr(mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
         return
 
     orig = mcp._tool_manager.list_tools
