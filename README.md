@@ -2,18 +2,59 @@
 
 **Provider-agnostic payment layer for MCP (Model Context Protocol) tools and agents.**
 
-`paymcp` is a lightweight SDK that helps you add monetization to your MCP-based tools, servers, or agents. It supports multiple payment providers and integrates seamlessly with MCP's tool/resource interface.
+`paymcp` is a lightweight SDK that helps you add monetization to your MCP‑based tools, servers, or agents. It supports multiple payment providers and integrates seamlessly with MCP's tool/resource interface.
+
+See the [full documentation](https://paymcp.info).
 
 ---
 
 ## 🔧 Features
 
 - ✅ Add `@price(...)` decorators to your MCP tools to enable payments
-- 🔁 Choose between different payment flows (elicit, confirm, etc.)
-- 🔌 Pluggable support for providers like Walleot, Stripe, and more
+- 🔁 Choose between different payment flows (elicit, progress, dynamic_tools, etc.)
+- 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface for custom providers.
 - ⚙️ Easy integration with `FastMCP` or other MCP servers
 
----
+
+## 🚀 Quickstart
+
+Install the SDK from PyPI:
+```bash
+pip install mcp paymcp
+```
+
+Initialize `PayMCP`:
+
+```python
+import os
+from mcp.server.fastmcp import FastMCP, Context
+from paymcp import PaymentFlow, price
+from paymcp.providers import StripeProvider
+
+mcp = FastMCP("AI agent name")
+
+PayMCP(
+    mcp,
+    providers=[
+        StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
+    ],
+    payment_flow=PaymentFlow.TWO_STEP # optional, TWO_STEP (default) / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+)
+
+```
+
+Use the `@price` decorator on any tool:
+
+```python
+@mcp.tool()
+@price(amount=0.99, currency="USD")
+def add(a: int, b: int, ctx: Context) -> int: # `ctx` is required by the PayMCP tool signature — include it even if unused
+    """Adds two numbers and returns the result."""
+    return a + b
+```
+
+> **Demo server:** For a complete setup, see the example repo: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo).
+
 
 ## 🧭 Payment Flows
 
@@ -32,56 +73,56 @@ The `payment_flow` parameter controls how the user is guided through the payment
 - **`PaymentFlow.PROGRESS`**  
   Shows payment link and a progress indicator while the system waits for payment confirmation in the background. The result is returned automatically once payment is completed. 
 
-- **`PaymentFlow.OOB`** *(Out-of-Band)*  
-Not yet implemented.
+
+- **`PaymentFlow.DYNAMIC_TOOLS`** 
+Steer the client and the LLM by changing the visible tool set at specific points in the flow (e.g., temporarily expose `confirm_payment_*`), thereby guiding the next valid action. 
+
 
 All flows require the MCP client to support the corresponding interaction pattern. When in doubt, start with `TWO_STEP`.
 
+
 ---
 
-## 🚀 Quickstart
+## 🗄️ State Storage 
 
-Install the SDK from PyPI:
-```bash
-pip install mcp paymcp
-```
+By default, when using the `TWO_STEP` payment flow, PayMCP stores pending tool arguments (for confirming payment) **in memory** using a process-local `Map`. This is **not durable** and will not work across server restarts or multiple server instances (no horizontal scaling).
 
-Initialize `PayMCP`:
+To enable durable and scalable state storage, you can provide a custom `StateStore` implementation. PayMCP includes a built-in `RedisStateStore`, which works with any Redis-compatible client.
 
 ```python
-from mcp.server.fastmcp import FastMCP, Context
-from paymcp import PayMCP, price, PaymentFlow
-import os
+from redis.asyncio import from_url
+from paymcp import PayMCP, RedisStateStore
 
-mcp = FastMCP("AI agent name")
-PayMCP(
-    mcp,  # your FastMCP instance
-    providers={
-        "stripe": {"apiKey": os.getenv("STRIPE_API_KEY")},
-    },
-    payment_flow=PaymentFlow.TWO_STEP #or ELICITATION / PROGRESS
-)
-```
-
-### Providers: alternative styles (optional)
-
-**Instances instead of config (advanced):**
-```python
-import os
-from paymcp.providers import WalleotProvider, StripeProvider
-
+redis = await from_url("redis://localhost:6379")
 PayMCP(
     mcp,
     providers=[
-        WalleotProvider(api_key=os.getenv("WALLEOT_API_KEY")),
-        CoinbaseProvider(api_key=os.getenv("COINBASE_API_KEY")),
+        StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
     ],
+    state_store=RedisStateStore(redis)
 )
-# Note: right now the first configured provider is used.
 ```
 
-**Custom provider (minimal):**  
+---
+
+## 🧩 Supported Providers
+
+Built-in support is available for the following providers. You can also [write a custom provider](#writing-a-custom-provider).
+
+- ✅ [Adyen](https://www.adyen.com)
+- ✅ [Coinbase Commerce](https://commerce.coinbase.com)
+- ✅ [PayPal](https://paypal.com)
+- ✅ [Stripe](https://stripe.com)
+- ✅ [Square](https://squareup.com)
+- ✅ [Walleot](https://walleot.com/developers)
+
+- 🔜 More providers welcome! Open an issue or PR.
+
+
+## 🔌 Writing a Custom Provider
+
 Any provider must subclass `BasePaymentProvider` and implement `create_payment(...)` and `get_payment_status(...)`.
+
 ```python
 from paymcp.providers import BasePaymentProvider
 
@@ -97,63 +138,9 @@ class MyProvider(BasePaymentProvider):
 PayMCP(mcp, providers=[MyProvider(api_key="...")])
 ```
 
-Use the `@price` decorator on any tool:
-
-```python
-@mcp.tool()
-@price(amount=0.19, currency="USD")
-def add(a: int, b: int, ctx: Context) -> int:
-    # `ctx` is required by the PayMCP tool signature — include it even if unused
-    return a + b
-```
-
-> **Demo server:** For a complete setup, see the example repo: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo).
-
-
----
-
-## 🗄️ State Storage (TWO_STEP only)
-
-By default, TWO_STEP uses in-memory storage (not durable). For production, use Redis:
-
-```python
-from redis.asyncio import from_url
-from paymcp import PayMCP, RedisStateStore
-
-redis = await from_url("redis://localhost:6379")
-PayMCP(
-    mcp,
-    providers={"stripe": {"apiKey": "..."}},
-    state_store=RedisStateStore(redis)
-)
-```
-
----
-
-## 🪟 Optional: WebView (STDIO)
-
-Open the payment link in a native window when your MCP server is connected via the stdio transport (typical for local/desktop installs).
-
-- Install: `pip install paymcp[webview]` (or `pdm add paymcp[webview]`).
-- What it does: when a priced tool is invoked, PayMCP opens a lightweight in-app webview to the provider's `payment_url` so the user can complete checkout without leaving the client.
-- Scope: applies only to stdio connections on the user's machine.
-- Notes: requires a desktop environment.
-
-
-
----
-
-## 🧩 Supported Providers
-- ✅ [Adyen](https://www.adyen.com)
-- ✅ [Coinbase Commerce](https://commerce.coinbase.com)
-- ✅ [PayPal](https://paypal.com)
-- ✅ [Stripe](https://stripe.com)
-- ✅ [Square](https://squareup.com)
-- ✅ [Walleot](https://walleot.com/developers)
-- 🔜 Want another provider? Open an issue or submit a pull request!
 
 ---
 
 ## 📄 License
 
-MIT License
+[MIT License](./LICENSE)
