@@ -14,10 +14,14 @@ def make_paid_wrapper(
     mcp,
     provider,
     price_info,
+    state_store=None,
 ):
     """
     One-step flow that *holds the tool open* and reports progress
     via ctx.report_progress() until the payment is completed.
+
+    Note: state_store parameter is accepted for signature consistency
+    but not used by PROGRESS flow.
     """
 
     @functools.wraps(func)

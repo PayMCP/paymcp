@@ -20,12 +20,19 @@ class PayMCP:
         self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
+        self.payment_flow = payment_flow
+
         # Only TWO_STEP needs state_store - create default if needed
         if state_store is None and payment_flow == PaymentFlow.TWO_STEP:
             from .state import InMemoryStateStore
             state_store = InMemoryStateStore()
         self.state_store = state_store
         self._patch_tool()
+
+        # DYNAMIC_TOOLS flow requires patching MCP internals
+        if payment_flow == PaymentFlow.DYNAMIC_TOOLS:
+            from .payment.flows.dynamic_tools import setup_flow
+            setup_flow(mcp_instance, self, payment_flow)
 
     def _patch_tool(self):
         original_tool = self.mcp.tool
@@ -50,7 +57,16 @@ class PayMCP:
                 else:
                     target_func = func
 
-                return original_tool(*args, **kwargs)(target_func)
+                result = original_tool(*args, **kwargs)(target_func)
+
+                # Apply deferred DYNAMIC_TOOLS list_tools patch after first tool registration
+                if self.payment_flow == PaymentFlow.DYNAMIC_TOOLS:
+                    if hasattr(self.mcp, '_tool_manager'):
+                        if not hasattr(self.mcp._tool_manager.list_tools, '_paymcp_dynamic_tools_patched'):
+                            from .payment.flows.dynamic_tools import _patch_list_tools_immediate
+                            _patch_list_tools_immediate(self.mcp)
+
+                return result
             return wrapper
 
         self.mcp.tool = patched_tool

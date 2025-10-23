@@ -32,11 +32,13 @@ class TestFlowFactory:
             result = wrapper_factory(mock_func, mock_mcp, mock_provider, mock_price_info)
 
             # Verify make_paid_wrapper was called with correct arguments
+            # All flows now accept state_store parameter for consistency
             mock_make_paid_wrapper.assert_called_once_with(
                 func=mock_func,
                 mcp=mock_mcp,
                 provider=mock_provider,
-                price_info=mock_price_info
+                price_info=mock_price_info,
+                state_store=None
             )
 
             assert result == mock_make_paid_wrapper.return_value
@@ -74,11 +76,13 @@ class TestFlowFactory:
 
             wrapper_factory(mock_func, mock_mcp, mock_provider, mock_price_info)
 
+            # All flows now accept state_store parameter for consistency
             mock_make_paid_wrapper.assert_called_once_with(
                 func=mock_func,
                 mcp=mock_mcp,
                 provider=mock_provider,
-                price_info=mock_price_info
+                price_info=mock_price_info,
+                state_store=None
             )
 
     def test_make_flow_progress(self):
@@ -125,12 +129,13 @@ class TestFlowFactory:
 
             wrapper_factory(specific_func, specific_mcp, specific_provider, specific_price_info)
 
-            # Verify exact parameter matching
+            # Verify exact parameter matching (all flows now include state_store)
             mock_make_paid_wrapper.assert_called_once_with(
                 func=specific_func,
                 mcp=specific_mcp,
                 provider=specific_provider,
-                price_info=specific_price_info
+                price_info=specific_price_info,
+                state_store=None
             )
 
     def test_wrapper_factory_returns_result(self):

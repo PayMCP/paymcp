@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+### Added
+- Experimental payment flow `DYNAMIC_TOOLS` for dynamic tool visibility control
+
 ## 0.2.1
 ### Added
 - Pluggable state storage for TWO_STEP flow

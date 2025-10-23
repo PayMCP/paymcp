@@ -319,10 +319,27 @@ class TestBuildProviders:
         assert "api_key" in original_config
         assert len(original_config) == 1  # Should still only have api_key
 
-    # Note: Line 110 coverage is difficult to test due to isinstance complexity
-    # The line is: raise TypeError(f"Constructed provider for '{name}' is not a BasePaymentProvider (got {type(obj).__name__})")
-    # This would only be reached if an object passes issubclass check but fails isinstance check after construction
-    # This is an extremely rare edge case that's difficult to reproduce in practice
+    def test_build_providers_constructor_returns_non_provider(self):
+        """Test line 113 - provider constructor returns non-BasePaymentProvider object."""
+        # Create a buggy provider class that passes issubclass check
+        # but returns something else from __init__
+        class BuggyProvider(BasePaymentProvider):
+            def __new__(cls, *args, **kwargs):
+                # Return a non-provider object instead of proper instance
+                return object()  # This is NOT a BasePaymentProvider instance
+
+            def create_payment(self, amount, currency, description):
+                return "id", "url"
+
+            def get_payment_status(self, payment_id):
+                return "paid"
+
+        # Register the buggy provider
+        register_provider("buggy", BuggyProvider)
+
+        # Try to build providers with the buggy one
+        with pytest.raises(TypeError, match="Constructed provider for 'buggy' is not a BasePaymentProvider"):
+            build_providers({"buggy": {"api_key": "test"}})
 
     def test_build_providers_exactly_line_123(self):
         """Test exactly line 123 for complete coverage."""

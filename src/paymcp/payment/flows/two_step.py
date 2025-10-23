@@ -25,15 +25,38 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
     )
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
+
+        if not payment_id:
+            return {
+                "content": [{"type": "text", "text": "Missing payment_id."}],
+                "status": "error",
+                "message": "Missing payment_id"
+            }
+
         stored = await state_store.get(str(payment_id))
+        logger.info(f"[confirm_tool] State retrieved: {stored is not None}")
         if not stored:
-            raise RuntimeError("Unknown or expired payment_id")
+            logger.warning(f"[confirm_tool] No state found for payment_id={payment_id}")
+            return {
+                "content": [{"type": "text", "text": "Unknown or expired payment_id."}],
+                "status": "error",
+                "message": "Unknown or expired payment_id",
+                "payment_id": payment_id
+            }
 
         status = provider.get_payment_status(payment_id)
+        logger.info(f"[confirm_tool] Payment status: {status}")
         if status != "paid":
-            raise RuntimeError(f"Payment status is {status}, expected 'paid'")
+            return {
+                "content": [{"type": "text", "text": f"Payment status is {status}, expected 'paid'."}],
+                "status": "error",
+                "message": f"Payment status is {status}, expected 'paid'",
+                "payment_id": payment_id
+            }
 
+        logger.info(f"[confirm_tool] Deleting state for payment_id={payment_id}")
         await state_store.delete(str(payment_id))
+        logger.info(f"[confirm_tool] State deleted, executing tool")
         return await func(**stored["args"])
 
     # --- Step 1: payment initiation -------------------------------------------

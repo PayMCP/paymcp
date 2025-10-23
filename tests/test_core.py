@@ -1,6 +1,7 @@
 """Tests for the paymcp.core module."""
 
 import pytest
+from importlib import reload
 from unittest.mock import Mock, MagicMock, patch
 from paymcp.core import PayMCP
 from paymcp.payment.payment_flow import PaymentFlow
@@ -152,32 +153,32 @@ class TestPayMCP:
             assert hasattr(paymcp, "_wrapper_factory")
             assert paymcp._wrapper_factory is not None
 
-    def test_version_exception_handling(self, mock_mcp_instance, providers_config):
-        """Test version exception handling when package not found."""
+    def test_version_exception_handling_module_import(self):
+        """Test version exception handling when package not found at module import time."""
         from importlib.metadata import PackageNotFoundError
+        import sys
 
-        # Patch version function to raise exception and reset module-level variable
-        with patch("paymcp.core.version") as mock_version:
-            mock_version.side_effect = PackageNotFoundError()
+        # Get module reference from sys.modules to avoid duplicate import styles
+        core_module = sys.modules['paymcp.core']
 
-            # Also patch the module-level __version__ to reset it
-            with patch("paymcp.core.__version__", None):
-                # Import and re-execute the version detection code
-                import paymcp.core
+        # Save original version
+        original_version = core_module.__version__
 
-                # Execute the version detection logic manually
-                try:
-                    paymcp.core.__version__ = mock_version("paymcp")
-                except PackageNotFoundError:
-                    paymcp.core.__version__ = "unknown"
+        try:
+            # Patch version to raise PackageNotFoundError
+            with patch("importlib.metadata.version") as mock_version:
+                mock_version.side_effect = PackageNotFoundError()
 
-                # This should not raise an exception
-                paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
-                assert paymcp is not None
+                # Reload the module to trigger the exception handling code (lines 13-14)
+                reload(core_module)
 
-                # Check that __version__ is set to "unknown"
-                import paymcp.core as core_module
+                # Verify __version__ is set to "unknown"
                 assert core_module.__version__ == "unknown"
+        finally:
+            # Restore original version
+            core_module.__version__ = original_version
+            # Reload again to restore normal state
+            reload(core_module)
 
     def test_provider_selection_no_providers(self, mock_mcp_instance):
         """Test provider selection when no providers configured."""
@@ -228,40 +229,41 @@ class TestPayMCP:
         # Verify the wrapper factory was called
         assert wrapper is not None
 
-    @patch("paymcp.core.build_providers")
-    def test_provider_selection_runtime_error(self, mock_build_providers, mock_mcp_instance):
-        """Test provider selection runtime error when no providers are available."""
-        mock_build_providers.return_value = {}  # No providers
+    def test_decorator_without_price_info(self, mock_mcp_instance, providers_config):
+        """Test that tools without price info are not wrapped."""
+        paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
 
-        paymcp = PayMCP(mock_mcp_instance, providers={})
+        # Create a function WITHOUT price info
+        def normal_tool():
+            """Normal tool without payment"""
+            return "result"
 
-        # Create a mock function with price info
-        func = Mock()
-        func._paymcp_price_info = {"price": 10.0, "currency": "USD"}
-        func.__name__ = "test_func"
-        func.__doc__ = "Test function"
-
-        # Mock the wrapper factory to check provider selection logic
+        # Mock the wrapper factory to track if it's called
         mock_wrapper_factory = Mock()
         paymcp._wrapper_factory = mock_wrapper_factory
 
-        # Mock the MCP tool decorator
-        def mock_tool_decorator(*args, **kwargs):
-            def decorator(target_func):
-                # This simulates the actual patched tool behavior
-                price_info = getattr(target_func, "_paymcp_price_info", None)
-                if price_info:
-                    # Try to get first provider - should raise RuntimeError
-                    provider = next(iter(paymcp.providers.values()), None)
-                    if provider is None:
-                        raise RuntimeError("No payment provider configured")
-                return target_func
-            return decorator
+        # Call the tool decorator (result not used, just checking side effect)
+        _ = paymcp.mcp.tool(normal_tool)
 
-        mock_mcp_instance.tool = mock_tool_decorator
+        # Verify wrapper factory was NOT called (no price info)
+        assert not mock_wrapper_factory.called
 
-        # This should raise RuntimeError when calling the tool with price info
-        # Mock next() to return None to trigger the RuntimeError
-        with patch('builtins.next', return_value=None):
-            with pytest.raises(RuntimeError, match="No payment provider configured"):
-                paymcp.mcp.tool(name="test_tool")(func)
+    def test_state_store_default_initialization(self, mock_mcp_instance, providers_config):
+        """Test that state_store defaults to InMemoryStateStore."""
+        paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
+
+        # Verify state_store was created
+        assert paymcp.state_store is not None
+
+        # Verify it's an InMemoryStateStore
+        from paymcp.state import InMemoryStateStore
+        assert isinstance(paymcp.state_store, InMemoryStateStore)
+
+    def test_state_store_custom_initialization(self, mock_mcp_instance, providers_config):
+        """Test that custom state_store can be provided."""
+        custom_store = Mock()
+
+        paymcp = PayMCP(mock_mcp_instance, providers=providers_config, state_store=custom_store)
+
+        # Verify custom state_store was used
+        assert paymcp.state_store == custom_store
