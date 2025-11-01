@@ -2,20 +2,27 @@
 import functools
 from ...utils.messages import open_link_message
 import logging
+import inspect
+from inspect import Parameter
+from typing import Optional, Annotated
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
     """
     Resubmit payment flow .
 
     Note: state_store parameter is accepted for signature consistency
     but not used by RESUBMIT flow.
     """
+
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         logger.debug(f"[PayMCP:Resubmit] wrapper invoked for provider={provider} argsLen={len(args) + len(kwargs)}")
-
+        # Accept top-level kw-only payment_id (added to schema via __signature__) and do not forward it to the original tool
+        top_level_payment_id = kwargs.pop("payment_id", None)
         # Expect ctx in kwargs to access payment parameters
 
         # Extract tool args from kwargs (SDK-style) or from first positional arg (dict-style)
@@ -25,12 +32,14 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
             tool_args = args[0]
         else:
             tool_args = {}
-        existed_payment_id = tool_args.get("payment_id") 
+        # Prefer top-level payment_id (schema kw-only), fallback to one nested in args dict
+        existed_payment_id = top_level_payment_id or tool_args.get("payment_id") 
 
         if not existed_payment_id:
             # Create payment session
+            logger.debug(f"[PayMCP:Resubmit] creating payment for {price_info}")
             payment_id, payment_url = provider.create_payment(
-                amount=price_info["amount"],
+                amount=price_info["price"],
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee"
             )
@@ -115,5 +124,20 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
             }
 
         return result
+
+
+    payment_param = Parameter(
+        "payment_id",
+        kind=Parameter.KEYWORD_ONLY,
+        default="",
+        annotation=Annotated[str, Field(
+            description="Optional payment identifier returned by a previous call when payment is required"
+        )],
+    )
+
+    wrapper.__signature__ = inspect.signature(func).replace(
+        parameters=(*inspect.signature(func).parameters.values(), payment_param)
+    )
+
 
     return wrapper

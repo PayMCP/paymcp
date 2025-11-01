@@ -14,25 +14,29 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 class PayMCP:
-    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP, state_store=None):
+    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP, state_store=None, mode:PaymentFlow=None):
         logger.debug(f"PayMCP v{__version__}")
-        flow_name = payment_flow.value
+        if mode is not None and payment_flow is not None and mode != payment_flow:
+            logger.warning("[PayMCP] Both 'mode' and 'payment_flow' were provided; 'mode' takes precedence.")
+        self.payment_flow = mode if mode is not None else payment_flow
+        if self.payment_flow is None:
+            self.payment_flow = PaymentFlow.TWO_STEP
+        flow_name = self.payment_flow.value
         self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
-        self.payment_flow = payment_flow
 
         # Only TWO_STEP needs state_store - create default if needed
-        if state_store is None and payment_flow == PaymentFlow.TWO_STEP:
+        if state_store is None and self.payment_flow == PaymentFlow.TWO_STEP:
             from .state import InMemoryStateStore
             state_store = InMemoryStateStore()
         self.state_store = state_store
         self._patch_tool()
 
         # DYNAMIC_TOOLS flow requires patching MCP internals
-        if payment_flow == PaymentFlow.DYNAMIC_TOOLS:
+        if self.payment_flow == PaymentFlow.DYNAMIC_TOOLS:
             from .payment.flows.dynamic_tools import setup_flow
-            setup_flow(mcp_instance, self, payment_flow)
+            setup_flow(mcp_instance, self, self.payment_flow)
 
     def _patch_tool(self):
         original_tool = self.mcp.tool
