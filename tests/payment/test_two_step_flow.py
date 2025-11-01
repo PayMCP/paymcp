@@ -228,7 +228,7 @@ class TestTwoStepFlow:
         # Verify the confirm tool was registered
         mock_mcp.tool.assert_called_once_with(
             name="confirm_test_tool_payment",
-            description="Confirm payment and execute test_tool()"
+            description="Confirm payment and execute test_tool(). Call this only after the user confirms the payment"
         )
 
     def test_wrapper_preserves_function_metadata(
