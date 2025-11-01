@@ -19,7 +19,7 @@ def make_flow(name):
         mod = import_module(f".{name}", __package__)
         make_paid_wrapper = mod.make_paid_wrapper
 
-        def wrapper_factory(func, mcp, provider, price_info, state_store=None):
+        def wrapper_factory(func, mcp, provider, price_info, state_store=None, config=None):
             # All flows have uniform signature - pass all parameters
             return make_paid_wrapper(
                 func=func,
@@ -27,6 +27,7 @@ def make_flow(name):
                 provider=provider,
                 price_info=price_info,
                 state_store=state_store,
+                config=config,
             )
 
         return wrapper_factory

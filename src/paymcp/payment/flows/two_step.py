@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
     """
     Implements the two‑step payment flow:
 
@@ -18,11 +18,16 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
 
     confirm_tool_name = f"confirm_{func.__name__}_payment"
 
+    confirm_tool_args = {
+        "name": confirm_tool_name,
+        "description": f"Confirm payment and execute {func.__name__}(). Call this only after the user confirms the payment"
+    }
+
+    if config and "meta" in config:
+        confirm_tool_args["meta"] = config["meta"]
+
     # --- Step 2: payment confirmation -----------------------------------------
-    @mcp.tool(
-        name=confirm_tool_name,
-        description=f"Confirm payment and execute {func.__name__}()"
-    )
+    @mcp.tool(**confirm_tool_args)
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
 

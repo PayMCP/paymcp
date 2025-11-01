@@ -41,7 +41,7 @@ async def _send_notification(ctx):
         pass
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
     """Wrap tool: initiate payment -> hide tool -> register confirm tool."""
     tool_name = func.__name__
     if hasattr(func, '_paymcp_price_info'):
@@ -69,8 +69,16 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
 
         logger.info(f"[DYNAMIC_TOOLS] Hidden tools for session {session_id}: {HIDDEN_TOOLS.get(session_id, set())}")
 
+        confirm_tool_args = {
+            "name": confirm_name,
+            "description": f"Confirm payment {pid} and execute {tool_name}()"
+        }
+
+        if config and "meta" in config:
+            confirm_tool_args["meta"] = config["meta"]
+
         # Register confirmation tool
-        @mcp.tool(name=confirm_name, description=f"Confirm payment {pid} and execute {tool_name}()")
+        @mcp.tool(**confirm_tool_args)
         async def _confirm(ctx=None):
             ps = PAYMENTS.get(pid)
             if not ps:
