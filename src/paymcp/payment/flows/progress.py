@@ -15,6 +15,7 @@ def make_paid_wrapper(
     provider,
     price_info,
     state_store=None,
+    config=None
 ):
     """
     One-step flow that *holds the tool open* and reports progress
