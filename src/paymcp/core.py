@@ -52,8 +52,10 @@ class PayMCP:
                     # Deferred payment creation, so do not call provider.create_payment here
                     kwargs["description"] = description_with_price(kwargs.get("description") or func.__doc__ or "", price_info)
                     target_func = self._wrapper_factory(
-                        func, self.mcp, provider, price_info, self.state_store
+                        func, self.mcp, provider, price_info, self.state_store, config=kwargs.copy()
                     )
+                    if self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS) and "meta" in kwargs:
+                        kwargs.pop("meta", None)
                 else:
                     target_func = func
 

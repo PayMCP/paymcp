@@ -9,7 +9,7 @@ from ...utils.elicitation import run_elicitation_loop
 
 logger = logging.getLogger(__name__)
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None):
+def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
     """
     Out-of-band payment flow (not yet implemented).
 
