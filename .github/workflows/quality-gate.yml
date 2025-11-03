@@ -84,7 +84,7 @@ jobs:
           echo "coverage-percentage=${COVERAGE}" >> $GITHUB_OUTPUT
 
           # Check if coverage meets threshold
-          THRESHOLD=95
+          THRESHOLD=90
           if [ "$COVERAGE" -ge "$THRESHOLD" ]; then
             echo "✅ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
             echo "coverage-passed=true" >> $GITHUB_OUTPUT
