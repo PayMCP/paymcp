@@ -66,6 +66,13 @@ The `payment_flow` parameter controls how the user is guided through the payment
   The second method (e.g. `confirm_add_payment`) verifies payment and runs the original logic.  
   Supported in most clients.
 
+ - **`PaymentFlow.RESUBMIT`**
+  Adds an optional `payment_id` to the original tool signature.
+    - **First call**: the tool is invoked without `payment_id` → PayMCP returns a `payment_url` + `payment_id` and instructs a retry after payment.
+    - **Second call**: the same tool is invoked again with the returned `payment_id` → PayMCP verifies payment server‑side and, if paid, executes the original tool logic.
+
+  Similar compatibility to TWO_STEP, but with a simpler surface
+
 - **`PaymentFlow.ELICITATION`** 
   Sends the user a payment link when the tool is invoked. If the client supports it, a payment UI is displayed immediately. Once the user completes payment, the tool proceeds.
 

@@ -6,3 +6,4 @@ class PaymentFlow(str, Enum):
     ELICITATION = "elicitation"
     OOB = "oob"
     DYNAMIC_TOOLS = "dynamic_tools" 
+    RESUBMIT = "resubmit"
