@@ -69,17 +69,18 @@ jobs:
         # Parse coverage percentage from coverage.xml
         if [ -f "coverage.xml" ]; then
           # Extract coverage percentage using python
-          COVERAGE=$(python -c "
-        import xml.etree.ElementTree as ET
-        try:
-            tree = ET.parse('coverage.xml')
-            root = tree.getroot()
-            coverage_attr = root.attrib.get('line-rate', '0')
-            coverage_percent = int(float(coverage_attr) * 100)
-            print(coverage_percent)
-        except Exception as e:
-            print('0')
-        ")
+          COVERAGE=$(python << 'EOF'
+import xml.etree.ElementTree as ET
+try:
+    tree = ET.parse('coverage.xml')
+    root = tree.getroot()
+    coverage_attr = root.attrib.get('line-rate', '0')
+    coverage_percent = int(float(coverage_attr) * 100)
+    print(coverage_percent)
+except Exception as e:
+    print('0')
+EOF
+)
           echo "Coverage: ${COVERAGE}%"
           echo "coverage-percentage=${COVERAGE}" >> $GITHUB_OUTPUT
 
