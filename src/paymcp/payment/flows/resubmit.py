@@ -1,10 +1,9 @@
 # paymcp/payment/flows/resubmit.py
 import functools
-from ...utils.messages import open_link_message
 import logging
 import inspect
 from inspect import Parameter
-from typing import Optional, Annotated
+from typing import Annotated
 from pydantic import Field
 
 logger = logging.getLogger(__name__)
