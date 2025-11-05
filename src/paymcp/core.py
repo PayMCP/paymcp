@@ -14,7 +14,7 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 class PayMCP:
-    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP, state_store=None, mode:Mode=None):
+    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = None, state_store=None, mode:Mode=None):
         logger.debug(f"PayMCP v{__version__}")
         if mode is not None and payment_flow is not None and mode != payment_flow:
             logger.warning("[PayMCP] Both 'mode' and 'payment_flow' were provided; 'mode' takes precedence.")
