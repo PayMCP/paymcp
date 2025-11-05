@@ -11,7 +11,7 @@ See the [full documentation](https://paymcp.info).
 ## 🔧 Features
 
 - ✅ Add `@price(...)` decorators to your MCP tools to enable payments
-- 🔁 Choose between different payment flows (elicit, progress, dynamic_tools, etc.)
+- 🔁 Choose between different  modes (two_step, resubmit, elicit, progress, dynamic_tools, etc.)
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface for custom providers.
 - ⚙️ Easy integration with `FastMCP` or other MCP servers
 
@@ -28,7 +28,7 @@ Initialize `PayMCP`:
 ```python
 import os
 from mcp.server.fastmcp import FastMCP, Context
-from paymcp import PaymentFlow, price
+from paymcp import Mode, price
 from paymcp.providers import StripeProvider
 
 mcp = FastMCP("AI agent name")
@@ -38,7 +38,7 @@ PayMCP(
     providers=[
         StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
     ],
-    payment_flow=PaymentFlow.TWO_STEP # optional, TWO_STEP (default) / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+    mode=Mode.TWO_STEP # optional, TWO_STEP (default) / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
 )
 
 ```
@@ -56,36 +56,38 @@ def add(a: int, b: int, ctx: Context) -> int: # `ctx` is required by the PayMCP 
 > **Demo server:** For a complete setup, see the example repo: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo).
 
 
-## 🧭 Payment Flows
+## 🧭 Modes (formerly Payment Flows)
 
-The `payment_flow` parameter controls how the user is guided through the payment process. Choose the strategy that fits your use case:
+In version 0.4.2, the `paymentFlow` parameter was renamed to `mode`, which better reflects its purpose. The old name remains supported for backward compatibility.
 
- - **`PaymentFlow.TWO_STEP`** (default)  
+The `mode` parameter controls how the user is guided through the payment process. Choose the strategy that fits your use case:
+
+ - **`Mode.TWO_STEP`** (default)  
   Splits the tool into two separate MCP methods.  
   The first step returns a `payment_url` and a `next_step` method for confirmation.  
   The second method (e.g. `confirm_add_payment`) verifies payment and runs the original logic.  
   Supported in most clients.
 
- - **`PaymentFlow.RESUBMIT`**
+ - **`Mode.RESUBMIT`**
   Adds an optional `payment_id` to the original tool signature.
     - **First call**: the tool is invoked without `payment_id` → PayMCP returns a `payment_url` + `payment_id` and instructs a retry after payment.
     - **Second call**: the same tool is invoked again with the returned `payment_id` → PayMCP verifies payment server‑side and, if paid, executes the original tool logic.
 
   Similar compatibility to TWO_STEP, but with a simpler surface
 
-- **`PaymentFlow.ELICITATION`** 
+- **`Mode.ELICITATION`** 
   Sends the user a payment link when the tool is invoked. If the client supports it, a payment UI is displayed immediately. Once the user completes payment, the tool proceeds.
 
 
-- **`PaymentFlow.PROGRESS`**  
+- **`Mode.PROGRESS`**  
   Shows payment link and a progress indicator while the system waits for payment confirmation in the background. The result is returned automatically once payment is completed. 
 
 
-- **`PaymentFlow.DYNAMIC_TOOLS`** 
+- **`Mode.DYNAMIC_TOOLS`** 
 Steer the client and the LLM by changing the visible tool set at specific points in the flow (e.g., temporarily expose `confirm_payment_*`), thereby guiding the next valid action. 
 
 
-All flows require the MCP client to support the corresponding interaction pattern. When in doubt, start with `TWO_STEP`.
+All modes require the MCP client to support the corresponding interaction pattern. When in doubt, start with `TWO_STEP`.
 
 
 ---

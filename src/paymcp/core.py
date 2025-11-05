@@ -3,7 +3,7 @@ from enum import Enum
 from .providers import build_providers
 from .utils.messages import description_with_price
 from .payment.flows import make_flow
-from .payment.payment_flow import PaymentFlow
+from .payment.payment_flow import PaymentFlow, Mode
 from importlib.metadata import version, PackageNotFoundError
 import logging
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 class PayMCP:
-    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = PaymentFlow.TWO_STEP, state_store=None, mode:PaymentFlow=None):
+    def __init__(self, mcp_instance, providers=None, payment_flow: PaymentFlow = None, state_store=None, mode:Mode=None):
         logger.debug(f"PayMCP v{__version__}")
         if mode is not None and payment_flow is not None and mode != payment_flow:
             logger.warning("[PayMCP] Both 'mode' and 'payment_flow' were provided; 'mode' takes precedence.")

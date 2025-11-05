@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+### Changed
+- `mode` is now the recommended parameter instead of `paymentFlow`, as it better reflects the intended behavior.
+  - `paymentFlow` remains supported for backward compatibility, but `mode` takes precedence in new implementations.
+  - Future updates may deprecate `paymentFlow`.
+
 ## 0.4.1
 ### Added
 - payment flow `RESUBMIT`.
