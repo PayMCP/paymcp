@@ -592,3 +592,28 @@ class TestResubmitFlow:
         assert await state_store.get("top_level_id") is None
         # nested_id state should still exist
         assert await state_store.get("nested_id") is not None
+
+    @pytest.mark.asyncio
+    async def test_payment_id_extraction_positional_args(self, state_store, mock_provider):
+        """Test payment_id extraction from positional args (line 31 coverage)."""
+        async def my_tool(data: str):
+            return {"result": "success"}
+
+        wrapper = make_paid_wrapper(my_tool, None, mock_provider, {"price": 1.0, "currency": "USD"}, state_store)
+
+        # Create payment first
+        with pytest.raises(RuntimeError) as exc_info:
+            await wrapper({"data": "test"})
+
+        payment_id = exc_info.value.data["payment_id"]
+
+        # Set up state and payment status
+        await state_store.set(payment_id, {"data": "test"})
+        mock_provider.get_payment_status.return_value = "paid"
+
+        # Pass payment_id via positional dict arg (not in kwargs) - this tests line 31
+        result = await wrapper({"payment_id": payment_id, "data": "test"})
+
+        # Should have used the payment_id from positional args
+        assert result["content"] == {"result": "success"}
+        assert result["annotations"]["payment"]["payment_id"] == payment_id
