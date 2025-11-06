@@ -11,7 +11,7 @@ Tests cover all code paths including:
 
 import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from paymcp.payment.flows.resubmit import make_paid_wrapper
 from paymcp.state.memory import InMemoryStateStore
 from paymcp.providers.base import BasePaymentProvider
