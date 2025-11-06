@@ -1,5 +1,9 @@
 # Changelog
 
+# 0.4.3
+### Added
+- Added protection against reusing `payment_id` in RESUBMIT mode (single-use enforcement).
+
 ## 0.4.2
 ### Changed
 - `mode` is now the recommended parameter instead of `paymentFlow`, as it better reflects the intended behavior.

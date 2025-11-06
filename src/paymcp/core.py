@@ -26,8 +26,8 @@ class PayMCP:
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
 
-        # Only TWO_STEP needs state_store - create default if needed
-        if state_store is None and self.payment_flow == PaymentFlow.TWO_STEP:
+        # Only TWO_STEP & RESUBBMIT needs state_store - create default if needed
+        if state_store is None and self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.RESUBMIT):
             from .state import InMemoryStateStore
             state_store = InMemoryStateStore()
         self.state_store = state_store

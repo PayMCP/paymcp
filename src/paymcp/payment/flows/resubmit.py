@@ -42,22 +42,42 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee"
             )
-            logger.debug(f"[PayMCP:Resubmit] created payment id={payment_id} url={payment_url}")
+
+            pid_str = str(payment_id)
+            await state_store.set(pid_str, kwargs)
+
+            logger.debug(f"[PayMCP:Resubmit] created payment id={pid_str} url={payment_url}")
+
+
 
             msg = (
                 "Payment required to execute this tool.\n"
                 "Follow the link to complete payment and retry with payment_id.\n\n"
                 f"Payment link: {payment_url}\n"
-                f"Payment ID: {payment_id}"
+                f"Payment ID: {pid_str}"
             )
             err = RuntimeError(msg)
             err.code = 402
             err.error = "payment_required"
             err.data = {
-                "payment_id": payment_id,
+                "payment_id": pid_str,
                 "payment_url": payment_url,
                 "retry_instructions": "Follow the link, complete payment, then retry with payment_id.",
-                "annotations": {"payment": {"status": "required", "payment_id": payment_id}}
+                "annotations": {"payment": {"status": "required", "payment_id": pid_str}}
+            }
+            raise err
+
+        stored = await state_store.get(existed_payment_id)
+        logger.info(f"[resubmit] State retrieved: {stored is not None}")
+
+        if not stored:
+            logger.warning(f"[resubmit] No state found for payment_id={existed_payment_id}")
+            err = RuntimeError("Unknown or expired payment_id.")
+            err.code = 404
+            err.error = "Unknown or expired payment_id."
+            err.data = {
+                "payment_id": existed_payment_id,
+                "retry_instructions": "Get the new link by calling this tool without payment_id.",
             }
             raise err
 
@@ -109,6 +129,10 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
 
         # Otherwise status == "paid", execute original tool
         logger.info(f"[PayMCP:Resubmit] payment confirmed; invoking original tool {func.__name__}")
+
+        await state_store.delete(str(existed_payment_id)) #deleting payment_status to prevent calling with the same ID
+        logger.info(f"[resubmit] State deleted, executing tool")
+
         result = await func(*args, **kwargs)
 
         try:
@@ -117,7 +141,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             setattr(result, "annotations", annotations)
         except Exception:
             return {
-                "content": [{"type": "text", "text": "Tool completed after payment."}],
+                "content": result,
                 "annotations": {"payment": {"status": "paid", "payment_id": existed_payment_id}},
                 "raw": result,
             }
