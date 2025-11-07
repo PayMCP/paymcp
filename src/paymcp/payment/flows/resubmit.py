@@ -174,17 +174,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             await state_store.delete(existed_payment_id)
             logger.info(f"[resubmit] Tool executed successfully, state deleted (single-use enforced)")
 
-        try:
-            annotations = getattr(result, "annotations", {}) or {}
-            annotations["payment"] = {"status": "paid", "payment_id": existed_payment_id}
-            setattr(result, "annotations", annotations)
-        except Exception:
-            return {
-                "content": result,
-                "annotations": {"payment": {"status": "paid", "payment_id": existed_payment_id}},
-                "raw": result,
-            }
-
+        # Return result without modifying it - don't change developer's original function return value
         return result
 
 

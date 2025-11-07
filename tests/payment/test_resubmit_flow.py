@@ -116,10 +116,8 @@ class TestResubmitFlow:
         # Verify tool was executed
         mock_func.assert_called_once()
 
-        # Result is wrapped with annotations
-        assert result["content"] == {"result": "success"}
-        assert result["annotations"]["payment"]["status"] == "paid"
-        assert result["annotations"]["payment"]["payment_id"] == "payment_123"
+        # Result is returned directly without modification
+        assert result == {"result": "success"}
 
         # Verify state was deleted (single-use enforcement)
         stored = await state_store.get("payment_123")
@@ -139,8 +137,7 @@ class TestResubmitFlow:
 
         result = await wrapper(payment_id="payment_456", arg="value")
 
-        assert result["content"] == {"result": "success"}
-        assert result["annotations"]["payment"]["status"] == "paid"
+        assert result == {"result": "success"}
         assert await state_store.get("payment_456") is None
 
     @pytest.mark.asyncio
@@ -158,8 +155,7 @@ class TestResubmitFlow:
         # Simulate SDK-style args parameter
         result = await wrapper(args={"payment_id": "payment_789", "data": "test"})
 
-        assert result["content"] == {"result": "success"}
-        assert result["annotations"]["payment"]["status"] == "paid"
+        assert result == {"result": "success"}
         mock_func.assert_called_once()
 
     # ===== Payment Status Tests =====
@@ -275,13 +271,13 @@ class TestResubmitFlow:
         # Test uppercase status
         mock_provider.get_payment_status.return_value = "PAID"
         result = await wrapper(payment_id="payment_123")
-        assert result["content"] == {"result": "success"}
+        assert result == {"result": "success"}
 
         # Test mixed case
         await state_store.set("payment_456", {"arg": "value"})
         mock_provider.get_payment_status.return_value = "Paid"
         result = await wrapper(payment_id="payment_456")
-        assert result["content"] == {"result": "success"}
+        assert result == {"result": "success"}
 
     # ===== Error Handling Tests =====
 
@@ -318,7 +314,7 @@ class TestResubmitFlow:
 
         # First execution - succeeds
         result1 = await wrapper(payment_id="payment_123")
-        assert result1["content"] == {"result": "success"}
+        assert result1 == {"result": "success"}
 
         # Second execution with same payment_id - should fail
         with pytest.raises(RuntimeError) as exc_info:
@@ -377,7 +373,7 @@ class TestResubmitFlow:
         mock_func.return_value = {"result": "success on retry"}
 
         result = await wrapper(payment_id="payment_123")
-        assert result["content"] == {"result": "success on retry"}
+        assert result == {"result": "success on retry"}
 
         # Now state should be deleted
         assert await state_store.get("payment_123") is None
@@ -437,7 +433,7 @@ class TestResubmitFlow:
 
         # First request succeeds
         result1 = await wrapper(payment_id="payment_seq")
-        assert result1["content"] == {"result": "success"}
+        assert result1 == {"result": "success"}
 
         # Subsequent requests fail
         for i in range(3):
@@ -512,16 +508,16 @@ class TestResubmitFlow:
         results = await asyncio.gather(task_a, task_b)
 
         assert len(results) == 2
-        assert all(r["content"] == {"result": "success"} for r in results)
+        assert all(r == {"result": "success"} for r in results)
         assert mock_func.call_count == 2
 
     # ===== Result Annotation Tests =====
 
     @pytest.mark.asyncio
-    async def test_result_annotations_added(
+    async def test_result_returned_unmodified(
         self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
-        """Test that payment annotations are added to result."""
+        """Test that result is returned without modification."""
         wrapper = make_paid_wrapper(
             mock_func, mock_mcp, mock_provider, price_info, state_store
         )
@@ -536,14 +532,15 @@ class TestResubmitFlow:
 
         result = await wrapper(payment_id="payment_123")
 
-        assert result.annotations["payment"]["status"] == "paid"
-        assert result.annotations["payment"]["payment_id"] == "payment_123"
+        # Result should be returned as-is without modification
+        assert result == mock_result
+        assert result.annotations == {}  # Unchanged
 
     @pytest.mark.asyncio
-    async def test_result_annotations_no_setattr(
+    async def test_result_immutable_returned_directly(
         self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
-        """Test annotation handling when result doesn't support setattr."""
+        """Test immutable results are returned directly."""
         wrapper = make_paid_wrapper(
             mock_func, mock_mcp, mock_provider, price_info, state_store
         )
@@ -556,11 +553,8 @@ class TestResubmitFlow:
 
         result = await wrapper(payment_id="payment_123")
 
-        # Should wrap in dict format
-        assert result["content"] == "simple string result"
-        assert result["annotations"]["payment"]["status"] == "paid"
-        assert result["annotations"]["payment"]["payment_id"] == "payment_123"
-        assert result["raw"] == "simple string result"
+        # Result should be returned directly without wrapping
+        assert result == "simple string result"
 
     # ===== Parameter Extraction Tests =====
 
@@ -586,8 +580,7 @@ class TestResubmitFlow:
         )
 
         # Should have used top_level_id
-        assert result["content"] == {"result": "success"}
-        assert result["annotations"]["payment"]["payment_id"] == "top_level_id"
+        assert result == {"result": "success"}
         # top_level_id state should be deleted
         assert await state_store.get("top_level_id") is None
         # nested_id state should still exist
@@ -615,5 +608,4 @@ class TestResubmitFlow:
         result = await wrapper({"payment_id": payment_id, "data": "test"})
 
         # Should have used the payment_id from positional args
-        assert result["content"] == {"result": "success"}
-        assert result["annotations"]["payment"]["payment_id"] == payment_id
+        assert result == {"result": "success"}

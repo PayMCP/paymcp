@@ -312,3 +312,68 @@ class TestPayMCP:
 
         # Verify list_tools was patched
         assert hasattr(mock_mcp_instance._tool_manager.list_tools, '_paymcp_dynamic_tools_patched')
+
+    @patch("paymcp.core.build_providers")
+    def test_provider_is_none_error(self, mock_build_providers, mock_mcp_instance):
+        """Test error when provider value is None (line 52 coverage)."""
+        # Set up providers dict where the provider is None
+        mock_build_providers.return_value = {"stripe": None}
+
+        paymcp = PayMCP(mock_mcp_instance, providers={"stripe": {}})
+
+        # Create a function with price info
+        func = Mock()
+        func._paymcp_price_info = {"price": 10.0, "currency": "USD"}
+        func.__name__ = "test_func"
+        func.__doc__ = "Test function"
+
+        # Mock the tool decorator
+        mock_tool_result = Mock()
+        mock_mcp_instance.tool.return_value = mock_tool_result
+
+        # Calling the patched tool should raise RuntimeError about no provider
+        with pytest.raises(RuntimeError, match="No payment provider configured"):
+            patched_tool = paymcp.mcp.tool(name="test_tool")
+            patched_tool(func)
+
+    @patch("paymcp.core.build_providers")
+    def test_dynamic_tools_deferred_patch(self, mock_build_providers, mock_mcp_instance):
+        """Test DYNAMIC_TOOLS deferred patch path (lines 72-73 coverage)."""
+        mock_provider = Mock(spec=BasePaymentProvider)
+        mock_provider.get_name = Mock(return_value="test_provider")
+        mock_providers = {"test": mock_provider}
+        mock_build_providers.return_value = mock_providers
+
+        # Set up _tool_manager with unpatched list_tools
+        mock_mcp_instance._tool_manager = Mock()
+        mock_mcp_instance._tool_manager.list_tools = Mock()
+
+        paymcp = PayMCP(
+            mock_mcp_instance,
+            providers={"test": {}},
+            payment_flow=PaymentFlow.DYNAMIC_TOOLS
+        )
+
+        # Create a function with price info
+        func = Mock()
+        func._paymcp_price_info = {"price": 10.0, "currency": "USD"}
+        func.__name__ = "test_func"
+        func.__doc__ = "Test function"
+
+        # Mock the wrapper factory
+        mock_wrapper_factory = Mock()
+        mock_target_func = Mock()
+        mock_wrapper_factory.return_value = mock_target_func
+        paymcp._wrapper_factory = mock_wrapper_factory
+
+        # Mock the MCP tool decorator
+        mock_tool_result = Mock()
+        mock_mcp_instance.tool.return_value = mock_tool_result
+        mock_tool_result.return_value = func
+
+        # Call the patched tool - this should trigger deferred patch
+        patched_tool = paymcp.mcp.tool(name="test_tool")
+        patched_tool(func)
+
+        # Verify list_tools was patched (lines 72-73)
+        assert hasattr(mock_mcp_instance._tool_manager.list_tools, '_paymcp_dynamic_tools_patched')
