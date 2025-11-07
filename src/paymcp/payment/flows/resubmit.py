@@ -3,10 +3,52 @@ import functools
 import logging
 import inspect
 from inspect import Parameter
-from typing import Annotated
+from typing import Annotated, Optional
 from pydantic import Field
 
 logger = logging.getLogger(__name__)
+
+
+def _create_payment_error(
+    message: str,
+    error_type: str,
+    payment_id: str,
+    retry_instructions: str,
+    code: int = 402,
+    payment_url: Optional[str] = None,
+    status: Optional[str] = None
+) -> RuntimeError:
+    """Create a standardized payment error with consistent structure.
+
+    Args:
+        message: User-facing error message
+        error_type: Error type identifier (e.g., 'payment_required', 'payment_pending')
+        payment_id: Payment identifier
+        retry_instructions: Instructions for retrying the operation
+        code: HTTP status code (default: 402)
+        payment_url: Optional payment URL (for payment_required errors)
+        status: Optional payment status (for status-related errors)
+
+    Returns:
+        RuntimeError with standardized attributes
+    """
+    err = RuntimeError(message)
+    err.code = code
+    err.error = error_type
+    err.data = {
+        "payment_id": payment_id,
+        "retry_instructions": retry_instructions,
+    }
+
+    if payment_url:
+        err.data["payment_url"] = payment_url
+
+    if status:
+        err.data["annotations"] = {
+            "payment": {"status": status, "payment_id": payment_id}
+        }
+
+    return err
 
 def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
     """
@@ -48,24 +90,19 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
 
             logger.debug(f"[PayMCP:Resubmit] created payment id={pid_str} url={payment_url}")
 
-
-
-            msg = (
-                "Payment required to execute this tool.\n"
-                "Follow the link to complete payment and retry with payment_id.\n\n"
-                f"Payment link: {payment_url}\n"
-                f"Payment ID: {pid_str}"
+            raise _create_payment_error(
+                message=(
+                    "Payment required to execute this tool.\n"
+                    "Follow the link to complete payment and retry with payment_id.\n\n"
+                    f"Payment link: {payment_url}\n"
+                    f"Payment ID: {pid_str}"
+                ),
+                error_type="payment_required",
+                payment_id=pid_str,
+                retry_instructions="Follow the link, complete payment, then retry with payment_id.",
+                payment_url=payment_url,
+                status="required"
             )
-            err = RuntimeError(msg)
-            err.code = 402
-            err.error = "payment_required"
-            err.data = {
-                "payment_id": pid_str,
-                "payment_url": payment_url,
-                "retry_instructions": "Follow the link, complete payment, then retry with payment_id.",
-                "annotations": {"payment": {"status": "required", "payment_id": pid_str}}
-            }
-            raise err
 
         # LOCK: Acquire per-payment-id lock to prevent concurrent access
         # This fixes both ENG-215 (race condition) and ENG-214 (payment loss)
@@ -78,14 +115,13 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
 
             if not stored:
                 logger.warning(f"[resubmit] No state found for payment_id={existed_payment_id}")
-                err = RuntimeError("Unknown or expired payment_id.")
-                err.code = 404
-                err.error = "payment_id_not_found"
-                err.data = {
-                    "payment_id": existed_payment_id,
-                    "retry_instructions": "Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
-                }
-                raise err
+                raise _create_payment_error(
+                    message="Unknown or expired payment_id.",
+                    error_type="payment_id_not_found",
+                    payment_id=existed_payment_id,
+                    retry_instructions="Payment ID not found or already used. Get a new link by calling this tool without payment_id.",
+                    code=404
+                )
 
             # Check payment status with provider
             raw = provider.get_payment_status(existed_payment_id)
@@ -95,53 +131,38 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             if status in ("canceled", "failed"):
                 # Keep state so user can retry after resolving payment issue
                 logger.info(f"[resubmit] Payment {status}, state kept for retry")
-
-                err = RuntimeError(
-                    f"Payment {status}. User must complete payment to proceed.\nPayment ID: {existed_payment_id}"
-                )
-                err.code = 402
-                err.error = f"payment_{status}"
-                err.data = {
-                    "payment_id": existed_payment_id,
-                    "retry_instructions": (
+                raise _create_payment_error(
+                    message=f"Payment {status}. User must complete payment to proceed.\nPayment ID: {existed_payment_id}",
+                    error_type=f"payment_{status}",
+                    payment_id=existed_payment_id,
+                    retry_instructions=(
                         f"Payment {status}. Retry with the same payment_id after resolving the issue, "
                         "or get a new link by calling this tool without payment_id."
                     ),
-                    "annotations": {"payment": {"status": status, "payment_id": existed_payment_id}}
-                }
-                raise err
+                    status=status
+                )
 
             if status == "pending":
                 # Keep state so user can retry after payment completes
                 logger.info(f"[resubmit] Payment pending, state kept for retry")
-
-                err = RuntimeError(
-                    f"Payment is not confirmed yet.\nAsk user to complete payment and retry.\nPayment ID: {existed_payment_id}"
+                raise _create_payment_error(
+                    message=f"Payment is not confirmed yet.\nAsk user to complete payment and retry.\nPayment ID: {existed_payment_id}",
+                    error_type="payment_pending",
+                    payment_id=existed_payment_id,
+                    retry_instructions="Wait for confirmation, then retry this tool with payment_id.",
+                    status=status
                 )
-                err.code = 402
-                err.error = "payment_pending"
-                err.data = {
-                    "payment_id": existed_payment_id,
-                    "retry_instructions": "Wait for confirmation, then retry this tool with payment_id.",
-                    "annotations": {"payment": {"status": status, "payment_id": existed_payment_id}}
-                }
-                raise err
 
             if status != "paid":
                 # Keep state for unknown status
                 logger.info(f"[resubmit] Unknown payment status: {status}, state kept for retry")
-
-                err = RuntimeError(
-                    f"Unrecognized payment status: {status}.\nRetry once payment is confirmed.\nPayment ID: {existed_payment_id}"
+                raise _create_payment_error(
+                    message=f"Unrecognized payment status: {status}.\nRetry once payment is confirmed.\nPayment ID: {existed_payment_id}",
+                    error_type="payment_unknown",
+                    payment_id=existed_payment_id,
+                    retry_instructions="Check payment status and retry once confirmed.",
+                    status=status
                 )
-                err.code = 402
-                err.error = "payment_unknown"
-                err.data = {
-                    "payment_id": existed_payment_id,
-                    "retry_instructions": "Check payment status and retry once confirmed.",
-                    "annotations": {"payment": {"status": status, "payment_id": existed_payment_id}}
-                }
-                raise err
 
             # Payment confirmed - execute tool BEFORE deleting state
             logger.info(f"[PayMCP:Resubmit] payment confirmed; invoking original tool {func.__name__}")
