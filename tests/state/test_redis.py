@@ -12,10 +12,13 @@ class TestRedisStateStore:
     @pytest.fixture
     def mock_redis(self):
         """Create a mock Redis client."""
+        from unittest.mock import Mock
         mock = AsyncMock()
         mock.setex = AsyncMock()
         mock.get = AsyncMock()
         mock.delete = AsyncMock()
+        # pipeline() should return a regular Mock, not AsyncMock
+        mock.pipeline = Mock()
         return mock
 
     @pytest.fixture
@@ -182,3 +185,108 @@ class TestRedisStateStore:
         assert before_ms <= timestamp <= after_ms
         # Should be much larger than seconds
         assert timestamp > 1000000000000  # After year 2001 in milliseconds
+
+    @pytest.mark.asyncio
+    async def test_get_and_delete_existing_key(self, store, mock_redis):
+        """Test atomically getting and deleting an existing key."""
+        from unittest.mock import Mock
+        stored_data = json.dumps({
+            "args": {"data": "value"},
+            "ts": 123456789
+        })
+        mock_pipeline = Mock()
+        mock_pipeline.get = Mock()
+        mock_pipeline.delete = Mock()
+        mock_pipeline.execute = AsyncMock(return_value=[stored_data, 1])
+        mock_redis.pipeline.return_value = mock_pipeline
+
+        result = await store.get_and_delete("test_key")
+
+        # Verify pipeline was used
+        mock_redis.pipeline.assert_called_once()
+        mock_pipeline.get.assert_called_once_with("paymcp:test_key")
+        mock_pipeline.delete.assert_called_once_with("paymcp:test_key")
+        mock_pipeline.execute.assert_called_once()
+        assert result["args"] == {"data": "value"}
+
+    @pytest.mark.asyncio
+    async def test_get_and_delete_nonexistent_key(self, store, mock_redis):
+        """Test get_and_delete on nonexistent key returns None."""
+        from unittest.mock import Mock
+        mock_pipeline = Mock()
+        mock_pipeline.get = Mock()
+        mock_pipeline.delete = Mock()
+        mock_pipeline.execute = AsyncMock(return_value=[None, 0])
+        mock_redis.pipeline.return_value = mock_pipeline
+
+        result = await store.get_and_delete("nonexistent")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_lock_acquire_and_release(self, store, mock_redis):
+        """Test basic lock acquisition and release."""
+        mock_redis.set.return_value = True  # Lock acquired
+        mock_redis.eval = AsyncMock()
+
+        async with store.lock("test_lock"):
+            # Inside lock
+            pass
+
+        # Verify lock was acquired
+        mock_redis.set.assert_called()
+        call_kwargs = mock_redis.set.call_args[1]
+        assert call_kwargs["nx"] is True
+        assert call_kwargs["ex"] == 30  # default timeout
+
+        # Verify lock was released
+        mock_redis.eval.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lock_acquire_with_retry(self, store, mock_redis):
+        """Test lock acquisition with exponential backoff."""
+        # Fail twice, then succeed
+        mock_redis.set.side_effect = [False, False, True]
+        mock_redis.eval = AsyncMock()
+
+        async with store.lock("test_lock"):
+            pass
+
+        # Verify set was called 3 times
+        assert mock_redis.set.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_lock_acquisition_failure(self, store, mock_redis):
+        """Test RuntimeError when lock cannot be acquired."""
+        mock_redis.set.return_value = False  # Always fail
+
+        with pytest.raises(RuntimeError, match="Failed to acquire lock"):
+            async with store.lock("test_lock"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_lock_custom_timeout(self, store, mock_redis):
+        """Test lock with custom timeout."""
+        mock_redis.set.return_value = True
+        mock_redis.eval = AsyncMock()
+
+        async with store.lock("test_lock", timeout=60):
+            pass
+
+        call_kwargs = mock_redis.set.call_args[1]
+        assert call_kwargs["ex"] == 60
+
+    @pytest.mark.asyncio
+    async def test_lock_released_on_exception(self, store, mock_redis):
+        """Test that lock is released even when exception occurs."""
+        mock_redis.set.return_value = True
+        mock_redis.eval = AsyncMock()
+
+        try:
+            async with store.lock("test_lock"):
+                raise RuntimeError("Test exception")
+        except RuntimeError:
+            pass
+
+        # Lock should still be released
+        mock_redis.eval.assert_called_once()

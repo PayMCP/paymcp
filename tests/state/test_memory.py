@@ -116,3 +116,149 @@ class TestInMemoryStateStore:
 
         result = await store.get("test_key")
         assert result["args"] == complex_data
+
+    # ===== get_and_delete Tests =====
+
+    @pytest.mark.asyncio
+    async def test_get_and_delete_existing_key(self, store):
+        """Test atomically getting and deleting an existing key."""
+        await store.set("test_key", {"data": "value"})
+
+        result = await store.get_and_delete("test_key")
+        assert result is not None
+        assert result["args"] == {"data": "value"}
+
+        # Key should be deleted
+        result_after = await store.get("test_key")
+        assert result_after is None
+
+    @pytest.mark.asyncio
+    async def test_get_and_delete_nonexistent_key(self, store):
+        """Test get_and_delete on nonexistent key returns None."""
+        result = await store.get_and_delete("nonexistent")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_and_delete_atomicity(self, store):
+        """Test that get_and_delete is atomic (no race conditions)."""
+        import asyncio
+
+        await store.set("race_key", {"data": "value"})
+
+        # Attempt concurrent get_and_delete
+        results = await asyncio.gather(
+            store.get_and_delete("race_key"),
+            store.get_and_delete("race_key"),
+            store.get_and_delete("race_key")
+        )
+
+        # Only one should succeed
+        successes = [r for r in results if r is not None]
+        failures = [r for r in results if r is None]
+
+        assert len(successes) == 1
+        assert len(failures) == 2
+
+    # ===== Lock Tests =====
+
+    @pytest.mark.asyncio
+    async def test_lock_basic_usage(self, store):
+        """Test basic lock acquisition and release."""
+        async with store.lock("test_lock"):
+            # Inside lock - should be able to perform operations
+            await store.set("test_key", {"data": "value"})
+            result = await store.get("test_key")
+            assert result["args"]["data"] == "value"
+
+        # After lock - lock should be released
+        assert "test_lock" not in store._payment_locks
+
+    @pytest.mark.asyncio
+    async def test_lock_prevents_concurrent_access(self, store):
+        """Test that lock prevents concurrent access to same key."""
+        import asyncio
+
+        execution_order = []
+
+        async def task1():
+            async with store.lock("shared_key"):
+                execution_order.append("task1_start")
+                await asyncio.sleep(0.1)
+                execution_order.append("task1_end")
+
+        async def task2():
+            await asyncio.sleep(0.01)  # Start slightly after task1
+            async with store.lock("shared_key"):
+                execution_order.append("task2_start")
+                execution_order.append("task2_end")
+
+        await asyncio.gather(task1(), task2())
+
+        # Task1 should complete before task2 starts
+        assert execution_order == ["task1_start", "task1_end", "task2_start", "task2_end"]
+
+    @pytest.mark.asyncio
+    async def test_lock_different_keys_concurrent(self, store):
+        """Test that locks on different keys don't block each other."""
+        import asyncio
+
+        execution_order = []
+
+        async def task_a():
+            async with store.lock("key_a"):
+                execution_order.append("a_start")
+                await asyncio.sleep(0.05)
+                execution_order.append("a_end")
+
+        async def task_b():
+            async with store.lock("key_b"):
+                execution_order.append("b_start")
+                await asyncio.sleep(0.05)
+                execution_order.append("b_end")
+
+        await asyncio.gather(task_a(), task_b())
+
+        # Both should start before either finishes
+        assert "a_start" in execution_order
+        assert "b_start" in execution_order
+        # The exact order might vary, but both pairs should be present
+        assert "a_end" in execution_order
+        assert "b_end" in execution_order
+
+    @pytest.mark.asyncio
+    async def test_lock_released_on_exception(self, store):
+        """Test that lock is released even when exception occurs."""
+        try:
+            async with store.lock("exc_key"):
+                raise RuntimeError("Test exception")
+        except RuntimeError:
+            pass
+
+        # Lock should be released
+        assert "exc_key" not in store._payment_locks
+
+        # Should be able to acquire lock again
+        async with store.lock("exc_key"):
+            pass
+
+    @pytest.mark.asyncio
+    async def test_lock_cleanup_after_use(self, store):
+        """Test that lock is cleaned up from _payment_locks after use."""
+        async with store.lock("cleanup_key"):
+            # During lock, key should exist in _payment_locks
+            assert "cleanup_key" in store._payment_locks
+
+        # After lock, key should be removed
+        assert "cleanup_key" not in store._payment_locks
+
+    @pytest.mark.asyncio
+    async def test_lock_multiple_sequential_acquisitions(self, store):
+        """Test that same lock can be acquired multiple times sequentially."""
+        for i in range(5):
+            async with store.lock("sequential_key"):
+                await store.set(f"key_{i}", {"iteration": i})
+
+        # All operations should succeed
+        for i in range(5):
+            result = await store.get(f"key_{i}")
+            assert result["args"]["iteration"] == i
