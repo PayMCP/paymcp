@@ -8,7 +8,7 @@ class AdyenProvider(BasePaymentProvider):
         api_key: str = None,
         apiKey: str = None,
         merchant_account: str = None,
-        return_url: str = "https://yoururl.com/return",
+        return_url: str = "https://paymcp.info/paymentinfo/",
         sandbox: bool = False,
         logger: logging.Logger = None,
     ):

@@ -52,3 +52,37 @@ class BasePaymentProvider(ABC):
     @abstractmethod
     def get_payment_status(self, payment_id: str) -> str:
         """Return payment status."""
+
+    def get_subscriptions(self, user_id: str, email: str = None):
+        """
+        Optional subscription support hook.
+
+        Providers that support subscriptions should override this method and return a dict with:
+          - current_subscriptions: list of current user subscriptions
+          - available_subscriptions: list of available subscription plans
+
+        Default implementation: signal that subscriptions are not supported.
+        """
+        raise RuntimeError("Subscriptions are not supported for this payment provider")
+
+    def start_subscription(self, plan_id: str, user_id: str, email: str = None):
+        """
+        Start a subscription for the given user and plan.
+
+        Providers that support subscriptions should override this method and return
+        a structure describing the created or resumed subscription/checkout session.
+
+        Default implementation: signal that subscriptions are not supported.
+        """
+        raise RuntimeError("Subscriptions are not supported for this payment provider")
+
+    def cancel_subscription(self, subscription_id: str, user_id: str, email: str = None):
+        """
+        Cancel (or schedule cancellation for) a subscription.
+
+        Providers that support subscriptions should override this method and return
+        a structure describing the cancellation result.
+
+        Default implementation: signal that subscriptions are not supported.
+        """
+        raise RuntimeError("Subscriptions are not supported for this payment provider")

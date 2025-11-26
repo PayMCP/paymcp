@@ -1,5 +1,13 @@
 # Changelog
 
+# 0.5.1
+### Added
+- Added subscription support in addition to the existing pay-per-request model.
+
+# 0.4.4
+### Changed
+- In RESUBMIT mode, the tool now uses the most recently provided arguments instead of those from the initial call.
+
 # 0.4.3
 ### Added
 - Added protection against reusing `payment_id` in RESUBMIT mode (single-use enforcement).

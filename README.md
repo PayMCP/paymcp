@@ -10,8 +10,9 @@ See the [full documentation](https://paymcp.info).
 
 ## 🔧 Features
 
-- ✅ Add `@price(...)` decorators to your MCP tools to enable payments
-- 🔁 Choose between different  modes (two_step, resubmit, elicit, progress, dynamic_tools, etc.)
+- ✅ Add `@price(...)` decorators to your MCP tools to enable pay‑per‑request billing.
+- ✅ Gate tools behind **active subscriptions** (where supported) with the `@subscription(...)` decorator; helper tools included.
+- 🔁 Pay‑per‑request flows support multiple **modes** (TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface for custom providers.
 - ⚙️ Easy integration with `FastMCP` or other MCP servers
 
@@ -56,39 +57,76 @@ def add(a: int, b: int, ctx: Context) -> int: # `ctx` is required by the PayMCP 
 > **Demo server:** For a complete setup, see the example repo: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo).
 
 
-## 🧭 Modes (formerly Payment Flows)
+## 💰 Choose How to Charge (per tool)
 
-In version 0.4.2, the `paymentFlow` parameter was renamed to `mode`, which better reflects its purpose. The old name remains supported for backward compatibility.
+Use **either** `@price` or `@subscription` on a tool (they are mutually exclusive).
 
-The `mode` parameter controls how the user is guided through the payment process. Choose the strategy that fits your use case:
+### Option A — Pay‑per‑request
 
- - **`Mode.TWO_STEP`** (default)  
-  Splits the tool into two separate MCP methods.  
-  The first step returns a `payment_url` and a `next_step` method for confirmation.  
-  The second method (e.g. `confirm_add_payment`) verifies payment and runs the original logic.  
-  Supported in most clients.
+```python
+@mcp.tool()
+@price(amount=0.19, currency="USD")
+def summarize(text: str, ctx: Context) -> str:
+    return text[:200]
+```
 
- - **`Mode.RESUBMIT`**
-  Adds an optional `payment_id` to the original tool signature.
-    - **First call**: the tool is invoked without `payment_id` → PayMCP returns a `payment_url` + `payment_id` and instructs a retry after payment.
-    - **Second call**: the same tool is invoked again with the returned `payment_id` → PayMCP verifies payment server‑side and, if paid, executes the original tool logic.
+### Option B — Subscription‑gated (providers with subscription support, e.g., Stripe)
 
-  Similar compatibility to TWO_STEP, but with a simpler surface
+User authentication is **your** responsibility. PayMCP will resolve identity from `ctx.authInfo` **or** a Bearer token (Authorization header). Make sure your token carries:
+- `sub` (treated as `userId`), and ideally
+- `email` (highly recommended for provider matching, e.g., Stripe).
 
-- **`Mode.ELICITATION`** 
-  Sends the user a payment link when the tool is invoked. If the client supports it, a payment UI is displayed immediately. Once the user completes payment, the tool proceeds.
+PayMCP does **not** validate or verify the token; it only parses it to extract `userId`/`email`.
+
+```python
+from paymcp import subscription
+
+@mcp.tool()
+@subscription(plan="price_pro_monthly")  # or a list of accepted plan IDs from your provider
+async def generate_report(ctx: Context) -> str:
+    return "Your report"
+```
+
+When you register the first subscription‑protected tool, PayMCP auto‑registers helper tools:
+
+- `list_subscriptions` — current subscriptions + available plans for the user.
+- `start_subscription` — accepts `planId` to create (or resume) a subscription.
+- `cancel_subscription` — accepts `subscriptionId` to cancel at period end.
+
+---
+
+## 🧩 Supported Providers
+
+Built-in support is available for the following providers. You can also [write a custom provider](#writing-a-custom-provider).
+
+- ✅ [Stripe](https://stripe.com) — pay‑per‑request + subscriptions
+- ✅ [Adyen](https://www.adyen.com) — pay‑per‑request
+- ✅ [Coinbase Commerce](https://commerce.coinbase.com) — pay‑per‑request
+- ✅ [PayPal](https://paypal.com) — pay‑per‑request
+- ✅ [Square](https://squareup.com) — pay‑per‑request
+- ✅ [Walleot](https://walleot.com/developers) — pay‑per‑request
+
+- 🔜 More providers welcome! Open an issue or PR.
 
 
-- **`Mode.PROGRESS`**  
-  Shows payment link and a progress indicator while the system waits for payment confirmation in the background. The result is returned automatically once payment is completed. 
+## 🔌 Writing a Custom Provider
 
+Any provider must subclass `BasePaymentProvider` and implement `create_payment(...)` and `get_payment_status(...)`.
 
-- **`Mode.DYNAMIC_TOOLS`** 
-Steer the client and the LLM by changing the visible tool set at specific points in the flow (e.g., temporarily expose `confirm_payment_*`), thereby guiding the next valid action. 
+```python
+from paymcp.providers import BasePaymentProvider
 
+class MyProvider(BasePaymentProvider):
 
-All modes require the MCP client to support the corresponding interaction pattern. When in doubt, start with `TWO_STEP`.
+    def create_payment(self, amount: float, currency: str, description: str):
+        # Return (payment_id, payment_url)
+        return "unique-payment-id", "https://example.com/pay"
 
+    def get_payment_status(self, payment_id: str) -> str:
+        return "paid"
+
+PayMCP(mcp, providers=[MyProvider(api_key="...")])
+```
 
 ---
 
@@ -114,39 +152,26 @@ PayMCP(
 
 ---
 
-## 🧩 Supported Providers
+## 🧭 Modes (pay‑per‑request only)
 
-Built-in support is available for the following providers. You can also [write a custom provider](#writing-a-custom-provider).
+In version 0.4.2, `paymentFlow` was renamed to `mode` (old name still works).
 
-- ✅ [Adyen](https://www.adyen.com)
-- ✅ [Coinbase Commerce](https://commerce.coinbase.com)
-- ✅ [PayPal](https://paypal.com)
-- ✅ [Stripe](https://stripe.com)
-- ✅ [Square](https://squareup.com)
-- ✅ [Walleot](https://walleot.com/developers)
+The `mode` parameter controls how the user is guided through the pay‑per‑request payment process. Pick what fits your client:
 
-- 🔜 More providers welcome! Open an issue or PR.
+- **`Mode.TWO_STEP`** (default) — Splits the tool into two MCP methods. First call returns `payment_url` + `next_step`; the confirm method verifies and runs the original logic. Works in most clients.
+- **`Mode.RESUBMIT`** — Adds optional `payment_id` to the tool signature. First call returns `payment_url` + `payment_id`; second call with `payment_id` verifies then runs the tool. Similar compatibility to TWO_STEP.
+- **`Mode.ELICITATION`** — Sends a payment link via MCP elicitation (if supported). After payment, the tool completes in the same call.
+- **`Mode.PROGRESS`** — Keeps the call open, streams progress while polling the provider, and returns automatically once paid.
+- **`Mode.DYNAMIC_TOOLS`** — Temporarily exposes additional tools (e.g., `confirm_payment_*`) to steer the client/LLM through the flow.
+
+When in doubt, start with `TWO_STEP`.
 
 
-## 🔌 Writing a Custom Provider
+---
 
-Any provider must subclass `BasePaymentProvider` and implement `create_payment(...)` and `get_payment_status(...)`.
+## 🔒 Security Notice
 
-```python
-from paymcp.providers import BasePaymentProvider
-
-class MyProvider(BasePaymentProvider):
-
-    def create_payment(self, amount: float, currency: str, description: str):
-        # Return (payment_id, payment_url)
-        return "unique-payment-id", "https://example.com/pay"
-
-    def get_payment_status(self, payment_id: str) -> str:
-        return "paid"
-
-PayMCP(mcp, providers=[MyProvider(api_key="...")])
-```
-
+PayMCP is NOT compatible with STDIO mode deployments where end users download and run MCP servers locally. This would expose your payment provider API keys to end users, creating serious security vulnerabilities.
 
 ---
 

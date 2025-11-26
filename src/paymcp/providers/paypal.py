@@ -8,8 +8,8 @@ class PayPalProvider(BasePaymentProvider):
                 client_id: str, 
                 client_secret: str, 
                 logger: logging.Logger = None,
-                success_url: str = "https://example.com/success",
-                cancel_url: str = "https://example.com/cancel", 
+                success_url: str = "https://paymcp.info/paymentsuccess/",
+                cancel_url: str = "https://paymcp.info/paymentcanceled/", 
                 sandbox: bool = True):
         self.client_id = client_id
         self.client_secret = client_secret
