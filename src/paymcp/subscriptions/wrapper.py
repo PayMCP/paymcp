@@ -4,7 +4,7 @@ import json
 import functools
 import inspect
 from typing import Any, Dict, List, Optional, Tuple, Callable, Awaitable
-from ..utils.jwt import parse_jwt
+from ..utils.jwt import parse_jwt_paylod
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ def _extract_auth_identity(ctx: Any, tool_name: str, log: logging.Logger) -> Tup
             user_id,
             email,
         )
-        token_data = parse_jwt(token)
+        token_data = parse_jwt_paylod(token)
         if token_data is not None:
             log.info(
                 "[PayMCP:Subscriptions] parsed token data: %s",

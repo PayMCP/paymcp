@@ -307,9 +307,12 @@ class StripeProvider(BasePaymentProvider):
         Find or create a Stripe Customer for the given user.
 
         Strategy:
-          - if email is provided, try to find an existing customer by email
-          - otherwise, or if not found, search by metadata.userId
-          - if still not found, create a new customer with metadata[userId]
+          1. Try to find an existing customer by metadata.userId (primary key).
+          2. If not found and email is provided, try to find an existing customer by email.
+             - If customer has no metadata.userId, attach our userId without overwriting other metadata keys.
+             - If customer has a matching metadata.userId, reuse it.
+             - If customer has a different metadata.userId, treat it as a conflict and raise an error.
+          3. If still not found, create a new customer with metadata[userId] (and optional email).
         """
         self.logger.debug(
             "Stripe _find_or_create_customer user_id=%s email=%s",
@@ -317,27 +320,7 @@ class StripeProvider(BasePaymentProvider):
             email or "n/a",
         )
 
-        # 1) If we have an email, try to find by email via /customers?email=...
-        if email:
-            params = {
-                "email": email,
-                "limit": "1",
-            }
-            url = f"{BASE_URL}/customers?{urlencode(params)}"
-            res = self._request("GET", url)
-
-            if isinstance(res, dict):
-                data = res.get("data", []) or []
-                if isinstance(data, list) and data:
-                    customer = data[0]
-                    if isinstance(customer, dict) and "id" in customer:
-                        self.logger.debug(
-                            "Stripe reusing existing customer via email: %s",
-                            customer["id"],
-                        )
-                        return str(customer["id"])
-
-        # 2) Try to find an existing customer by our own userId in metadata
+        # 1) Try to find an existing customer by our own userId in metadata (primary key).
         search_params = {
             "query": f"metadata['userId']:'{user_id}'",
             "limit": "1",
@@ -356,7 +339,56 @@ class StripeProvider(BasePaymentProvider):
                     )
                     return str(existing["id"])
 
-        # 3) Otherwise, create a new customer and always store our userId in metadata
+        # 2) If not found by userId and we have an email, try to find an existing customer by email.
+        if email:
+            params = {
+                "email": email,
+                "limit": "1",
+            }
+            url = f"{BASE_URL}/customers?{urlencode(params)}"
+            res = self._request("GET", url)
+
+            if isinstance(res, dict):
+                data = res.get("data", []) or []
+                if isinstance(data, list) and data:
+                    customer = data[0]
+                    if isinstance(customer, dict) and "id" in customer:
+                        metadata = customer.get("metadata") or {}
+                        meta_user_id = metadata.get("userId")
+
+                        if not meta_user_id:
+                            # Existing customer has no userId in metadata; attach our userId without overwriting other metadata keys.
+                            self._request(
+                                "POST",
+                                f"{BASE_URL}/customers/{customer['id']}",
+                                {"metadata[userId]": user_id},
+                            )
+                            self.logger.debug(
+                                "Stripe reusing existing customer via email and attaching metadata.userId: %s",
+                                customer["id"],
+                            )
+                            return str(customer["id"])
+
+                        if meta_user_id == user_id:
+                            # Existing customer is already associated with this userId; just reuse it.
+                            self.logger.debug(
+                                "Stripe reusing existing customer via email with matching metadata.userId: %s",
+                                customer["id"],
+                            )
+                            return str(customer["id"])
+
+                        # Existing customer is associated with a different userId; this is a potential account hijack or merge.
+                        self.logger.error(
+                            "Stripe found customer via email (%s) with conflicting metadata.userId=%s for user_id=%s",
+                            customer["id"],
+                            meta_user_id,
+                            user_id,
+                        )
+                        raise ValueError(
+                            "Stripe: email is already associated with a different user account"
+                        )
+
+        # 3) Nothing suitable found; create a new customer and always store our userId in metadata.
         body = {
             "metadata[userId]": user_id,
         }

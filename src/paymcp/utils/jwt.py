@@ -6,10 +6,16 @@ import json
 logger = logging.getLogger(__name__)
 
 
-def parse_jwt(token: str) -> Optional[Dict[str, Any]]:
+def parse_jwt_paylod(token: str) -> Optional[Dict[str, Any]]:
     """
     A very simple JWT parser without signature validation.
     Used only to extract the payload (sub / email / username).
+    SECURITY WARNING:
+    - This function MUST NOT be used to authenticate users or authorize requests.
+    - The token MUST already be fully validated by the MCP host
+      (signature, expiration, issuer, audience, etc.) before calling this function.
+    - The returned payload SHOULD be treated as trusted only because the caller
+      guarantees prior verification, not because of this function itself.
     """
     if not token or not isinstance(token, str):
         return None
