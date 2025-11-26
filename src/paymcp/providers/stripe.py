@@ -9,8 +9,8 @@ class StripeProvider(BasePaymentProvider):
         self,
         api_key: str = None, 
         apiKey: str = None,
-        success_url: str = 'https://yoururl.com/success?session_id={CHECKOUT_SESSION_ID}',
-        cancel_url: str = 'https://yoururl.com/cancel',
+        success_url: str = 'https://paymcp.info/paymentsuccess/?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url: str = 'https://paymcp.info/paymentcanceled/',
         logger: logging.Logger = None,
     ):
         super().__init__(api_key, apiKey, logger=logger)
