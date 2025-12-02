@@ -30,7 +30,7 @@ class TestAdyenProvider:
         )
         assert provider.api_key == "test_key"
         assert provider.merchant_account == "merchant123"
-        assert provider.return_url == "https://yoururl.com/return"
+        assert provider.return_url == "https://paymcp.info/paymentinfo/"
         assert provider.base_url == "https://checkout-test.adyen.com/v71"
         mock_logger.debug.assert_called_with("Adyen ready")
 

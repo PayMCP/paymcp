@@ -188,13 +188,14 @@ class TestPayMCP:
         # Create a mock function with price info
         func = Mock()
         func._paymcp_price_info = {"price": 10.0, "currency": "USD"}
+        func._paymcp_subscription_info = None  # Explicitly set to None to avoid Mock truthy behavior
         func.__name__ = "test_func"
         func.__doc__ = "Test function"
 
-        # Call the patched tool - this should trigger a StopIteration error
-        # when trying to get the first provider from an empty dict
-        with pytest.raises(StopIteration):
+        # Call the patched tool - this should raise RuntimeError when no provider is available
+        with pytest.raises(RuntimeError) as exc_info:
             paymcp.mcp.tool(name="test_tool")(func)
+        assert "No payment provider configured" in str(exc_info.value)
 
     @patch("paymcp.core.build_providers")
     def test_provider_selection_with_providers(self, mock_build_providers, mock_mcp_instance):
