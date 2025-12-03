@@ -11,8 +11,8 @@ class CoinbaseProvider(BasePaymentProvider):
         self,
         api_key: str = None,
         apiKey: str = None,
-        success_url: str = 'https://example.com/success',
-        cancel_url: str = 'https://example.com/cancel',
+        success_url: str = 'https://paymcp.info/paymentsuccess/',
+        cancel_url: str = 'https://paymcp.info/paymentcanceled/',
         logger: logging.Logger = None,
         # If set to True, payments will be confirmed faster (on PENDING), 
         # but there is a small chance something may still go wrong with the payment.

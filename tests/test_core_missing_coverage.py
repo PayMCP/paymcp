@@ -38,17 +38,19 @@ class TestCoreEdgeCases:
             state_store=mock_state_store
         )
 
-        # The error should be raised when trying to access an empty providers dict
-        # This happens in the patched_tool wrapper when iterating over providers
-        with pytest.raises(StopIteration):
+        # The error should be raised when no providers are configured
+        # This happens in the patched_tool wrapper when checking for providers
+        with pytest.raises(RuntimeError) as exc_info:
             # Simulate calling tool() with a function that has @price decorator
             test_func = Mock(__name__="test_func")
             test_func._paymcp_price_info = {"price": 1.0, "currency": "USD"}
+            test_func._paymcp_subscription_info = None  # Explicitly set to None to avoid Mock truthy behavior
 
-            # Call the patched tool which will try to iterate over empty providers
+            # Call the patched tool which will check for providers
             # The patched tool is now in mock_mcp_instance.tool
             patched_tool_decorator = mock_mcp_instance.tool
             patched_tool_decorator()(test_func)
+        assert "No payment provider configured" in str(exc_info.value)
 
     def test_two_step_flow_with_meta_config(self, mock_mcp_instance, mock_state_store):
         """Test TWO_STEP flow removes meta from kwargs when present."""

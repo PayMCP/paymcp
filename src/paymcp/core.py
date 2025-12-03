@@ -25,6 +25,7 @@ class PayMCP:
         self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
+        self._subscription_tools_registered = False
 
         # Only TWO_STEP & RESUBBMIT needs state_store - create default if needed
         if state_store is None and self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.RESUBMIT):
@@ -42,21 +43,58 @@ class PayMCP:
         original_tool = self.mcp.tool
         def patched_tool(*args, **kwargs):
             def wrapper(func):
-                # Read @price decorator
                 price_info = getattr(func, "_paymcp_price_info", None)
+                subscription_info = getattr(func, "_paymcp_subscription_info", None)
 
-                if price_info:
-                    # --- Create payment using provider ---
-                    provider = next(iter(self.providers.values())) #get first one - TODO allow to choose
+                # Determine tool name for logging and subscription wrappers
+                tool_name = kwargs.get("name")
+                if not tool_name and len(args) > 0 and isinstance(args[0], str):
+                    tool_name = args[0]
+                if not tool_name:
+                    tool_name = func.__name__
+
+                if subscription_info:
+                    # --- Set up subscription guard and tools ---
+                    provider = next(iter(self.providers.values()), None)  # get first one - TODO: allow choosing
                     if provider is None:
-                        raise RuntimeError(
-                            f"No payment provider configured"
-                        )
+                        raise RuntimeError("[PayMCP] No payment provider configured for subscription tools")
+
+                    # Register subscription tools once per PayMCP instance
+                    if not getattr(self, "_subscription_tools_registered", False):
+                        from .subscriptions.wrapper import register_subscription_tools
+                        register_subscription_tools(self.mcp, provider)
+                        self._subscription_tools_registered = True
+
+                    # Build subscription wrapper around the original tool
+                    from .subscriptions.wrapper import make_subscription_wrapper
+                    target_func = make_subscription_wrapper(
+                        func,
+                        self.mcp,
+                        provider,
+                        subscription_info,
+                        tool_name,
+                        self.state_store,
+                        config=kwargs.copy(),
+                    )
+
+                elif price_info:
+                    # --- Create payment using provider ---
+                    provider = next(iter(self.providers.values()), None)  # get first one - TODO: allow choosing
+                    if provider is None:
+                        raise RuntimeError("[PayMCP] No payment provider configured")
 
                     # Deferred payment creation, so do not call provider.create_payment here
-                    kwargs["description"] = description_with_price(kwargs.get("description") or func.__doc__ or "", price_info)
+                    kwargs["description"] = description_with_price(
+                        kwargs.get("description") or func.__doc__ or "",
+                        price_info,
+                    )
                     target_func = self._wrapper_factory(
-                        func, self.mcp, provider, price_info, self.state_store, config=kwargs.copy()
+                        func,
+                        self.mcp,
+                        provider,
+                        price_info,
+                        self.state_store,
+                        config=kwargs.copy(),
                     )
                     if self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS) and "meta" in kwargs:
                         kwargs.pop("meta", None)

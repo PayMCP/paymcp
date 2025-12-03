@@ -1,7 +1,7 @@
 """Tests for the paymcp.decorators module."""
 
 import pytest
-from paymcp.decorators import price
+from paymcp.decorators import price, subscription
 
 
 class TestPriceDecorator:
@@ -125,3 +125,66 @@ class TestPriceDecorator:
         assert func1._paymcp_price_info["currency"] == "USD"
         assert func2._paymcp_price_info["price"] == 20.00
         assert func2._paymcp_price_info["currency"] == "EUR"
+
+
+class TestSubscriptionDecorator:
+    """Test the @subscription decorator."""
+
+    def test_subscription_decorator_single_plan(self):
+        """Test subscription decorator with a single plan."""
+
+        @subscription("price_pro_monthly")
+        def test_function():
+            return "result"
+
+        assert hasattr(test_function, "_paymcp_subscription_info")
+        assert test_function._paymcp_subscription_info["plan"] == "price_pro_monthly"
+
+    def test_subscription_decorator_multiple_plans(self):
+        """Test subscription decorator with multiple plans."""
+
+        @subscription(["price_pro_monthly", "price_enterprise"])
+        def test_function():
+            return "result"
+
+        assert hasattr(test_function, "_paymcp_subscription_info")
+        assert test_function._paymcp_subscription_info["plan"] == ["price_pro_monthly", "price_enterprise"]
+
+    def test_subscription_decorator_preserves_function(self):
+        """Test that decorator preserves original function behavior."""
+
+        @subscription("price_basic")
+        def calculate(a, b):
+            return a + b
+
+        # Function should still work normally
+        result = calculate(2, 3)
+        assert result == 5
+
+        # But also have subscription info
+        assert hasattr(calculate, "_paymcp_subscription_info")
+        assert calculate._paymcp_subscription_info["plan"] == "price_basic"
+
+    def test_subscription_decorator_with_async_function(self):
+        """Test subscription decorator with async functions."""
+
+        @subscription("price_premium")
+        async def async_function():
+            return "async result"
+
+        assert hasattr(async_function, "_paymcp_subscription_info")
+        assert async_function._paymcp_subscription_info["plan"] == "price_premium"
+
+    def test_multiple_subscription_functions_independent(self):
+        """Test that multiple decorated functions maintain independent subscription info."""
+
+        @subscription("price_basic")
+        def func1():
+            return "func1"
+
+        @subscription(["price_pro", "price_enterprise"])
+        def func2():
+            return "func2"
+
+        assert func1._paymcp_subscription_info["plan"] == "price_basic"
+        assert func2._paymcp_subscription_info["plan"] == ["price_pro", "price_enterprise"]

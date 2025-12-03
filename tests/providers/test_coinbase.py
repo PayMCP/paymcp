@@ -24,8 +24,8 @@ class TestCoinbaseProvider:
     def test_init_with_api_key(self, mock_logger):
         provider = CoinbaseProvider(api_key="test_key", logger=mock_logger)
         assert provider.api_key == "test_key"
-        assert provider.success_url == "https://example.com/success"
-        assert provider.cancel_url == "https://example.com/cancel"
+        assert provider.success_url == "https://paymcp.info/paymentsuccess/"
+        assert provider.cancel_url == "https://paymcp.info/paymentcanceled/"
         assert provider.confirm_on_pending is False
         mock_logger.debug.assert_called_with("Coinbase Commerce ready")
 
