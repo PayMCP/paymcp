@@ -54,7 +54,9 @@ def add(a: int, b: int, ctx: Context) -> int: # `ctx` is required by the PayMCP 
     return a + b
 ```
 
-> **Demo server:** For a complete setup, see the example repo: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo).
+> **Demo MCP servers:**
+> - Pay‑per‑request example: [python-paymcp-server-demo](https://github.com/blustAI/python-paymcp-server-demo)
+> - Subscription example: [paymcp-subscription-demo-py](https://github.com/PayMCP/paymcp-subscription-demo-py)
 
 
 ## 💰 Choose How to Charge (per tool)

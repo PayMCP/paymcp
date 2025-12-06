@@ -177,6 +177,18 @@ class TestExtractAuthIdentity:
         user_id, email = _extract_auth_identity(ctx, "test_tool", mock_logger)
 
         assert user_id == "meta_user"
+        assert email == "meta@example.com"
+
+    def test_invalid_email_returns_none(self, mock_logger):
+        """Email with invalid format should be normalized to None."""
+        ctx = Mock()
+        ctx.authInfo = {"userId": "user123", "email": "not-an-email"}
+        ctx.request_context = None
+
+        user_id, email = _extract_auth_identity(ctx, "test_tool", mock_logger)
+
+        assert user_id == "user123"
+        assert email is None
 
 
 class TestEnsureSubscriptionAllowed:

@@ -395,7 +395,13 @@ class StripeProvider(BasePaymentProvider):
         if email:
             body["email"] = email
 
-        customer = self._request("POST", f"{BASE_URL}/customers", body)
+        # Use idempotency key to avoid duplicate customers if concurrent requests race.
+        customer = self._request(
+            "POST",
+            f"{BASE_URL}/customers",
+            body,
+            idempotency_key=f"paymcp-customer-{user_id}",
+        )
 
         if not isinstance(customer, dict) or "id" not in customer:
             raise ValueError("Stripe: failed to create customer")
