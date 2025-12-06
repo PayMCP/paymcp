@@ -1,6 +1,7 @@
 # paymcp/subscriptions/wrapper.py
 import logging
 import json
+import re
 import functools
 import inspect
 from typing import Any, Dict, List, Optional, Tuple, Callable, Awaitable
@@ -36,6 +37,23 @@ def _safe_get(obj: Any, *keys: str) -> Any:
                 return value
     return None
 
+
+_EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _normalize_email(email: Any) -> Optional[str]:
+    """Validate and normalize an email address."""
+    if email is None:
+        return None
+
+    email_str = str(email).strip()
+    if not email_str:
+        return None
+
+    if not _EMAIL_REGEX.match(email_str):
+        return None
+
+    return email_str
 
 
 def _get_bearer_token_from_ctx(ctx: Any, log: logging.Logger) -> Optional[str]:
@@ -161,6 +179,8 @@ def _extract_auth_identity(ctx: Any, tool_name: str, log: logging.Logger) -> Tup
         user_id = token_data.get("sub")
     if not email and token_data:
         email = token_data.get("email") or token_data.get("username")
+
+    email = _normalize_email(email)
 
     log.info(
         "[PayMCP:Subscriptions] resolved identity: user_id=%r, email=%r",

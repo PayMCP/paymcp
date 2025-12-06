@@ -1,5 +1,9 @@
 # Changelog
 
+# 0.5.3
+### Added
+- Stripe provider now sets an `Idempotency-Key` when creating customers to prevent duplicate customer records for the same user.
+
 # 0.5.1
 ### Added
 - Added subscription support in addition to the existing pay-per-request model.

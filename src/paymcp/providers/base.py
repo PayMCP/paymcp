@@ -16,8 +16,10 @@ class BasePaymentProvider(ABC):
             "Content-Type": "application/x-www-form-urlencoded",
         }
 
-    def _request(self, method: str, url: str, data: dict = None):
+    def _request(self, method: str, url: str, data: dict = None, idempotency_key: str = None):
         headers = self._build_headers()
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
         try:
             if method.upper() == "GET":
                 resp = requests.get(url, headers=headers, params=data)
