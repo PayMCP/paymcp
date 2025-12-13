@@ -27,8 +27,7 @@ class PayMCP:
         self.providers = build_providers(providers or {})
         self._subscription_tools_registered = False
 
-        # Only TWO_STEP & RESUBBMIT needs state_store - create default if needed
-        if state_store is None and self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.RESUBMIT):
+        if state_store is None:
             from .state import InMemoryStateStore
             state_store = InMemoryStateStore()
         self.state_store = state_store

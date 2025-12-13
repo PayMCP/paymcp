@@ -12,6 +12,8 @@ import uuid
 from typing import Dict, Any, Set, NamedTuple
 from ...utils.messages import open_link_message
 import logging
+from ...utils.context import get_ctx_from_server
+from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,11 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
         pid = str(payment_id)
         # Extract session ID from ctx parameter (use integer ID for consistency with filter)
         ctx = kwargs.get("ctx", None)
+        if ctx is None and mcp is not None:
+            try:
+                ctx = get_ctx_from_server(mcp)
+            except Exception:
+                ctx = None
         session_id = id(ctx.session) if ctx and hasattr(ctx, 'session') and ctx.session else uuid.uuid4().int
         confirm_name = f"confirm_{tool_name}_{pid}"
 
@@ -101,6 +108,17 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
 
                 # Execute original, cleanup state
                 result = await func(**ps.args)
+
+                if is_disconnected(ctx):
+                    logger.warning("[dynamic_tools] Disconnected after payment confirmation; returning pending result")
+                    return {
+                        "status": "pending",
+                        "message": "Connection aborted. Call the tool again to retrieve the result.",
+                        "payment_id": pid,
+                        "payment_url": payment_url,
+                        "annotations": { "payment": { "status": "paid", "payment_id": pid } }
+                    }
+
                 del PAYMENTS[pid]
 
                 # Cleanup hidden tools

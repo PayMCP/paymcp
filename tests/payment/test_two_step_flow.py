@@ -59,57 +59,26 @@ class TestTwoStepFlow:
         return store
 
     @pytest.mark.asyncio
-    async def test_initiate_step_with_webview(
+    async def test_initiate_step_uses_link_message(
         self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
     ):
-        """Test the initiation step when webview is available."""
-        with patch("paymcp.payment.flows.two_step.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.two_step.opened_webview_message") as mock_webview_msg:
-
-            mock_webview.return_value = True
-            mock_webview_msg.return_value = "Webview opened for payment"
-
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
-            result = await wrapper(arg1="value1", arg2="value2")
-
-            # Verify payment was created
-            mock_provider.create_payment.assert_called_once_with(
-                amount=15.0,
-                currency="EUR",
-                description="test_tool() execution fee"
-            )
-
-            # Verify webview message was used
-            mock_webview_msg.assert_called_once_with("https://payment.url", 15.0, "EUR")
-
-            # Verify response structure
-            assert result["payment_url"] == "https://payment.url"
-            assert result["payment_id"] == "payment_123"
-            assert result["next_step"] == "confirm_test_tool_payment"
-            assert result["message"] == "Webview opened for payment"
-
-            # Verify args were stored
-            assert mock_state_store._storage["payment_123"]["args"] == {"arg1": "value1", "arg2": "value2"}
-
-    @pytest.mark.asyncio
-    async def test_initiate_step_without_webview(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
-    ):
-        """Test the initiation step when webview is not available."""
-        with patch("paymcp.payment.flows.two_step.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.two_step.open_link_message") as mock_link_msg:
-
-            mock_webview.return_value = False
+        """Initiation step always uses link message (no webview)."""
+        with patch("paymcp.payment.flows.two_step.open_link_message") as mock_link_msg:
             mock_link_msg.return_value = "Open payment link"
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
             result = await wrapper(test_param="test_value")
 
-            # Verify link message was used
+            mock_provider.create_payment.assert_called_once_with(
+                amount=15.0,
+                currency="EUR",
+                description="test_tool() execution fee"
+            )
             mock_link_msg.assert_called_once_with("https://payment.url", 15.0, "EUR")
-
-            # Verify response structure
             assert result["message"] == "Open payment link"
+            assert result["payment_url"] == "https://payment.url"
+            assert result["payment_id"] == "payment_123"
+            assert result["next_step"] == "confirm_test_tool_payment"
             assert mock_state_store._storage["payment_123"]["args"] == {"test_param": "test_value"}
 
     @pytest.mark.asyncio

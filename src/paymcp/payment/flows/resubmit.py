@@ -5,6 +5,8 @@ import inspect
 from inspect import Parameter
 from typing import Annotated, Optional
 from pydantic import Field
+from ...utils.context import get_ctx_from_server
+from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,13 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
         # Accept top-level kw-only payment_id (added to schema via __signature__) and do not forward it to the original tool
         top_level_payment_id = kwargs.pop("payment_id", None)
         # Expect ctx in kwargs to access payment parameters
+
+        ctx = kwargs.get("ctx", None)
+        if ctx is None and mcp is not None:
+            try:
+                ctx = get_ctx_from_server(mcp)
+            except Exception:
+                ctx = None
 
         # Extract tool args from kwargs (SDK-style) or from first positional arg (dict-style)
         if "args" in kwargs and isinstance(kwargs["args"], dict):
@@ -169,6 +178,16 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
 
             # Execute tool (may fail - state not deleted yet)
             result = await func(*args, **kwargs)
+
+            # If client disconnected after payment but before sending result, keep state so they can retry fetch
+            if is_disconnected(ctx):
+                logger.warning("[resubmit] Disconnected after payment confirmation; returning pending result")
+                return {
+                    "status": "pending",
+                    "message": "Connection aborted. Call the tool again to retrieve the result.",
+                    "payment_id": str(existed_payment_id),
+                    "annotations": { "payment": { "status": "paid", "payment_id": str(existed_payment_id) } }
+                }
 
             # Tool succeeded - now delete state to enforce single-use
             await state_store.delete(existed_payment_id)

@@ -45,10 +45,8 @@ class TestElicitationFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
     ):
         """Test successful payment flow."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
-            mock_webview.return_value = True
             mock_elicitation.return_value = "paid"
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
@@ -70,11 +68,9 @@ class TestElicitationFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
     ):
         """Test payment flow when webview is not available."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation, \
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation, \
              patch("paymcp.payment.flows.elicitation.open_link_message") as mock_open_link:
 
-            mock_webview.return_value = False
             mock_elicitation.return_value = "paid"
             mock_open_link.return_value = "Open payment link"
 
@@ -90,10 +86,8 @@ class TestElicitationFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
     ):
         """Test payment flow when payment is canceled."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
-            mock_webview.return_value = True
             mock_elicitation.return_value = "canceled"
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
@@ -111,10 +105,8 @@ class TestElicitationFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
     ):
         """Test payment flow when payment is pending."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
-            mock_webview.return_value = True
             mock_elicitation.return_value = "pending"
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
@@ -134,10 +126,8 @@ class TestElicitationFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
     ):
         """Test payment flow when elicitation raises exception."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
-            mock_webview.return_value = True
             mock_elicitation.side_effect = RuntimeError("Elicitation failed")
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
@@ -152,30 +142,26 @@ class TestElicitationFlow:
     async def test_make_paid_wrapper_with_webview_message(
         self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
     ):
-        """Test that webview message is properly used."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation, \
-             patch("paymcp.payment.flows.elicitation.opened_webview_message") as mock_webview_msg:
+        """No webview support: message always link."""
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation, \
+             patch("paymcp.payment.flows.elicitation.open_link_message") as mock_open_link:
 
-            mock_webview.return_value = True
             mock_elicitation.return_value = "paid"
-            mock_webview_msg.return_value = "Webview opened"
+            mock_open_link.return_value = "Open payment link"
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
             await wrapper(ctx=mock_ctx)
 
-            # Verify webview message was used
-            mock_webview_msg.assert_called_once_with("https://payment.url", 10.0, "USD")
+            # Verify link message was used
+            mock_open_link.assert_called_once_with("https://payment.url", 10.0, "USD")
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_no_ctx(
         self, mock_func, mock_mcp, mock_provider, price_info
     ):
         """Test payment flow when no context is provided."""
-        with patch("paymcp.payment.flows.elicitation.open_payment_webview_if_available") as mock_webview, \
-             patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
+        with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
-            mock_webview.return_value = True
             mock_elicitation.return_value = "paid"
 
             wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
