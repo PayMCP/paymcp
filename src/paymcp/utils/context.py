@@ -14,3 +14,23 @@ def get_ctx_from_server(server: Any) -> Any:
         except Exception:
             return None
     return None
+
+def capture_client_from_ctx(ctx):
+    if not ctx:
+        return {
+            "name": "unknown",
+            "capabilities": {},
+            "sessionId": None,
+        }
+
+    session = getattr(ctx, "session", None)
+    client_params = getattr(session, "_client_params", None)
+
+    client_info = getattr(client_params, "clientInfo", None)
+    capabilities = getattr(client_params, "capabilities", None)
+
+    return {
+        "name": getattr(client_info, "name", None) or "unknown",
+        "capabilities": capabilities.model_dump() if capabilities else {},
+        "sessionId": str(id(session))
+    }

@@ -3,6 +3,7 @@ from .responseSchema import SimpleActionSchema
 from types import SimpleNamespace
 import logging
 import asyncio
+from .context import capture_client_from_ctx
 logger = logging.getLogger(__name__)
 
 PROGRESS_INTERVAL_SECONDS = 3
@@ -29,6 +30,10 @@ async def _progress_reporter(ctx, stop_event: asyncio.Event, interval: int = PRO
         pass
 
 async def run_elicitation_loop(ctx, func, message, provider, payment_id, max_attempts=5):
+
+    client_info = capture_client_from_ctx(ctx)
+    logger.debug(f"[PayMCP] Client info: {client_info}")
+
     for attempt in range(max_attempts):
         stop_event = None
         progress_task = None
