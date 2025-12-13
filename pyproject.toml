@@ -1,6 +1,6 @@
 [project]
 name = "paymcp"
-version = "0.5.3"
+version = "0.6.1"
 description = "Provider-agnostic payment layer for MCP (Model Context Protocol) tools and agents."
 authors = [
     {name = "PayMCP Open Source Contributors", email = "dev@paymcp.info"},
@@ -10,9 +10,6 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
 
-
-[project.optional-dependencies]
-webview = ["pywebview>=4.0"]        # pip/pdm install paymcp[webview]
 
 [tool.pdm.dev-dependencies]
 test = ["pytest", "pytest-asyncio", "pytest-cov"]
@@ -27,4 +24,3 @@ distribution = true
 
 [tool.pdm.package-dir]  
 "" = "src" 
-

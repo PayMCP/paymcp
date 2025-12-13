@@ -5,6 +5,8 @@ import inspect
 from inspect import Parameter
 from typing import Annotated, Optional
 from pydantic import Field
+from ...utils.context import get_ctx_from_server
+from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,13 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
         # Accept top-level kw-only payment_id (added to schema via __signature__) and do not forward it to the original tool
         top_level_payment_id = kwargs.pop("payment_id", None)
         # Expect ctx in kwargs to access payment parameters
+
+        ctx = kwargs.get("ctx", None)
+        if ctx is None and mcp is not None:
+            try:
+                ctx = get_ctx_from_server(mcp)
+            except Exception:
+                ctx = None
 
         # Extract tool args from kwargs (SDK-style) or from first positional arg (dict-style)
         if "args" in kwargs and isinstance(kwargs["args"], dict):
@@ -170,6 +179,16 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             # Execute tool (may fail - state not deleted yet)
             result = await func(*args, **kwargs)
 
+            # If client disconnected after payment but before sending result, keep state so they can retry fetch
+            if await is_disconnected(ctx):
+                logger.warning("[resubmit] Disconnected after payment confirmation; returning pending result")
+                return {
+                    "status": "pending",
+                    "message": "Connection aborted. Call the tool again to retrieve the result.",
+                    "payment_id": str(existed_payment_id),
+                    "annotations": { "payment": { "status": "paid", "payment_id": str(existed_payment_id) } }
+                }
+
             # Tool succeeded - now delete state to enforce single-use
             await state_store.delete(existed_payment_id)
             logger.info(f"[resubmit] Tool executed successfully, state deleted (single-use enforced)")
@@ -188,23 +207,27 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
     )
 
     # Insert payment_param before any VAR_KEYWORD (**kwargs) parameter
-    original_params = list(inspect.signature(func).parameters.values())
-    new_params = []
-    var_keyword_param = None
+    try:
+        original_params = list(inspect.signature(func).parameters.values())
+        new_params = []
+        var_keyword_param = None
 
-    for param in original_params:
-        if param.kind == Parameter.VAR_KEYWORD:
-            var_keyword_param = param
-        else:
-            new_params.append(param)
+        for param in original_params:
+            if param.kind == Parameter.VAR_KEYWORD:
+                var_keyword_param = param
+            else:
+                new_params.append(param)
 
-    # Add payment_id before **kwargs
-    new_params.append(payment_param)
+        # Add payment_id before **kwargs
+        new_params.append(payment_param)
 
-    # Add **kwargs at the end if it existed
-    if var_keyword_param:
-        new_params.append(var_keyword_param)
+        # Add **kwargs at the end if it existed
+        if var_keyword_param:
+            new_params.append(var_keyword_param)
 
-    wrapper.__signature__ = inspect.signature(func).replace(parameters=new_params)
+        wrapper.__signature__ = inspect.signature(func).replace(parameters=new_params)
+    except Exception:
+        # If signature inspection fails (e.g., non-function mocks), skip signature override
+        pass
 
     return wrapper
