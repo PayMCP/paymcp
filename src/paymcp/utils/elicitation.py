@@ -78,6 +78,7 @@ async def run_elicitation_loop(ctx, func, message, provider, payment_id, max_att
                 try:
                     await progress_task
                 except asyncio.CancelledError:
+                    # Progress reporter task cancelled as expected
                     pass
         
         logger.debug(f"[run_elicitation_loop] Elicitation response: {elicitation}")
