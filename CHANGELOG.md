@@ -1,5 +1,11 @@
 # Changelog
 
+# 0.6.1
+### Added
+- Session recovery for ELICITATION and PROGRESS modes after client timeouts/disconnects (reuse pending payment and continue).
+- `is_disconnected` to capture aborts and preserve payment info when the connection drops before sending the result.
+
+
 # 0.5.3
 ### Added
 - Stripe provider now sets an `Idempotency-Key` when creating customers to prevent duplicate customer records for the same user.
