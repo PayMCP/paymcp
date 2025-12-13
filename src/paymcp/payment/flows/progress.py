@@ -38,11 +38,14 @@ def make_paid_wrapper(
 
         async def _notify(message: str, progress: Optional[int] = None):
             if ctx is not None and hasattr(ctx, "report_progress"):
-                await ctx.report_progress(
-                    message=message,
-                    progress=progress or 0,
-                    total=100,
-                )
+                try:
+                    await ctx.report_progress(
+                        message=message,
+                        progress=progress or 0,
+                        total=100,
+                    )
+                except TypeError:
+                    return
 
         session_id = id(ctx.session) if ctx and hasattr(ctx, 'session') and ctx.session else None
 
@@ -119,7 +122,7 @@ def make_paid_wrapper(
 
         # Call the underlying tool with its original args/kwargs
         result = await func(*args, **kwargs)
-        if is_disconnected(ctx):
+        if await is_disconnected(ctx):
             return {
                 "status": "pending",
                 "message": "Connection aborted. Call the tool again to retrieve the result.",

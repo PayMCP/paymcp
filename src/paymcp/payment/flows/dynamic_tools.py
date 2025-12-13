@@ -109,7 +109,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
                 # Execute original, cleanup state
                 result = await func(**ps.args)
 
-                if is_disconnected(ctx):
+                if await is_disconnected(ctx):
                     logger.warning("[dynamic_tools] Disconnected after payment confirmation; returning pending result")
                     return {
                         "status": "pending",

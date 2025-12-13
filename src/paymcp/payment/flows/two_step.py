@@ -63,7 +63,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
 
         logger.info(f"[confirm_tool] Deleting state for payment_id={payment_id}")
         result = await func(**stored["args"])
-        if is_disconnected(ctx):
+        if await is_disconnected(ctx):
             logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
             return {
                 "status": "pending",

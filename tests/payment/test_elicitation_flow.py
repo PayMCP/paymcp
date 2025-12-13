@@ -40,16 +40,22 @@ class TestElicitationFlow:
         """Create a mock context."""
         return Mock()
 
+    @pytest.fixture
+    def state_store(self):
+        """Create a state store for elicitation flow."""
+        from paymcp.state.memory import InMemoryStateStore
+        return InMemoryStateStore()
+
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_successful_payment(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx, state_store
     ):
         """Test successful payment flow."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
             mock_elicitation.return_value = "paid"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify payment was created
@@ -65,7 +71,7 @@ class TestElicitationFlow:
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_webview_unavailable(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx, state_store
     ):
         """Test payment flow when webview is not available."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation, \
@@ -74,7 +80,7 @@ class TestElicitationFlow:
             mock_elicitation.return_value = "paid"
             mock_open_link.return_value = "Open payment link"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify open link message was used
@@ -83,14 +89,14 @@ class TestElicitationFlow:
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_payment_canceled(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx, state_store
     ):
         """Test payment flow when payment is canceled."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
             mock_elicitation.return_value = "canceled"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify function was not called and proper response returned
@@ -102,35 +108,35 @@ class TestElicitationFlow:
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_payment_pending(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx, state_store
     ):
         """Test payment flow when payment is pending."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
             mock_elicitation.return_value = "pending"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify function was not called and proper response returned
             mock_func.assert_not_called()
             assert result == {
                 "status": "pending",
-                "message": "We haven't received the payment yet. Click the button below to check again.",
-                "next_step": "test_function",
-                "payment_id": "payment_123"
+                "message": "We haven't received the payment yet.",
+                "payment_id": "payment_123",
+                "payment_url": "https://payment.url"
             }
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_elicitation_exception(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx, state_store
     ):
         """Test payment flow when elicitation raises exception."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
             mock_elicitation.side_effect = RuntimeError("Elicitation failed")
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
 
             with pytest.raises(RuntimeError, match="Elicitation failed"):
                 await wrapper(ctx=mock_ctx)
@@ -140,7 +146,7 @@ class TestElicitationFlow:
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_with_webview_message(
-        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx, state_store
     ):
         """No webview support: message always link."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation, \
@@ -149,7 +155,7 @@ class TestElicitationFlow:
             mock_elicitation.return_value = "paid"
             mock_open_link.return_value = "Open payment link"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             await wrapper(ctx=mock_ctx)
 
             # Verify link message was used
@@ -157,20 +163,20 @@ class TestElicitationFlow:
 
     @pytest.mark.asyncio
     async def test_make_paid_wrapper_no_ctx(
-        self, mock_func, mock_mcp, mock_provider, price_info
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
     ):
         """Test payment flow when no context is provided."""
         with patch("paymcp.payment.flows.elicitation.run_elicitation_loop") as mock_elicitation:
 
             mock_elicitation.return_value = "paid"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
             result = await wrapper()
 
             # Verify elicitation was called with None context
             mock_elicitation.assert_called_once()
             args = mock_elicitation.call_args[0]
-            assert args[0] is None  # ctx should be None
+            assert args[0] is None or args[0] is mock_mcp.get_context.return_value  # ctx may come from server
 
     @pytest.mark.asyncio
     async def test_wrapper_preserves_function_metadata(

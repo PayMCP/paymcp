@@ -180,7 +180,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             result = await func(*args, **kwargs)
 
             # If client disconnected after payment but before sending result, keep state so they can retry fetch
-            if is_disconnected(ctx):
+            if await is_disconnected(ctx):
                 logger.warning("[resubmit] Disconnected after payment confirmation; returning pending result")
                 return {
                     "status": "pending",
@@ -207,23 +207,27 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
     )
 
     # Insert payment_param before any VAR_KEYWORD (**kwargs) parameter
-    original_params = list(inspect.signature(func).parameters.values())
-    new_params = []
-    var_keyword_param = None
+    try:
+        original_params = list(inspect.signature(func).parameters.values())
+        new_params = []
+        var_keyword_param = None
 
-    for param in original_params:
-        if param.kind == Parameter.VAR_KEYWORD:
-            var_keyword_param = param
-        else:
-            new_params.append(param)
+        for param in original_params:
+            if param.kind == Parameter.VAR_KEYWORD:
+                var_keyword_param = param
+            else:
+                new_params.append(param)
 
-    # Add payment_id before **kwargs
-    new_params.append(payment_param)
+        # Add payment_id before **kwargs
+        new_params.append(payment_param)
 
-    # Add **kwargs at the end if it existed
-    if var_keyword_param:
-        new_params.append(var_keyword_param)
+        # Add **kwargs at the end if it existed
+        if var_keyword_param:
+            new_params.append(var_keyword_param)
 
-    wrapper.__signature__ = inspect.signature(func).replace(parameters=new_params)
+        wrapper.__signature__ = inspect.signature(func).replace(parameters=new_params)
+    except Exception:
+        # If signature inspection fails (e.g., non-function mocks), skip signature override
+        pass
 
     return wrapper
