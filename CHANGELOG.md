@@ -1,5 +1,11 @@
 # Changelog
 
+# 0.6.1
+### Added
+- Session recovery for ELICITATION and PROGRESS modes after client timeouts/disconnects (reuse pending payment and continue).
+- `is_disconnected` to capture aborts and preserve payment info when the connection drops before sending the result.
+
+
 # 0.5.3
 ### Added
 - Stripe provider now sets an `Idempotency-Key` when creating customers to prevent duplicate customer records for the same user.
@@ -49,7 +55,3 @@
   - As ready-made instances: `{"stripe": StripeProvider(...), "custom": MyProvider(...)}`
   - As a list of instances: `[WalleotProvider(...), MyProvider(...)]`
 
-## 0.1.0
-- Add WebView checkout for the MCP STDIO transport (local/desktop clients). When a priced tool triggers a payment, PayMCP opens a native in‑app webview to the provider’s `payment_url` so the user can complete checkout.
-- Scope: applies only to STDIO connections on the user’s machine; 
-- Install: `pip install paymcp[webview]` or `pdm add paymcp[webview]`.

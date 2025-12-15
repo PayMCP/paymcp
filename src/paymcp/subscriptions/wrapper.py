@@ -6,6 +6,7 @@ import functools
 import inspect
 from typing import Any, Dict, List, Optional, Tuple, Callable, Awaitable
 from ..utils.jwt import parse_jwt_paylod
+from ..utils.context import get_ctx_from_server
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -369,7 +370,7 @@ def make_subscription_wrapper(
         # Additional fallback: try to obtain a context-like object from the MCP server
         if ctx is None and mcp is not None:
             try:
-                ctx = _get_ctx_from_server(mcp)
+                ctx = get_ctx_from_server(mcp)
             except Exception:
                 ctx = None
 
@@ -446,20 +447,7 @@ class CancelSubscriptionInput(BaseModel):
         description="Identifier of the subscription to cancel.",
     )
 
-def _get_ctx_from_server(server: Any) -> Any:
-    """
-    Best-effort retrieval of a context-like object from the server.
 
-    For FastMCP, this uses server.get_context() if available.
-    For other servers, this returns None and callers must handle the absence of context.
-    """
-    get_ctx = getattr(server, "get_context", None)
-    if callable(get_ctx):
-        try:
-            return get_ctx()
-        except Exception:
-            return None
-    return None
 
 def register_subscription_tools(
     server: Any,
@@ -482,7 +470,7 @@ def register_subscription_tools(
         description="List current subscriptions and available subscription plans for the authenticated user.",
     )
     async def _list_subscriptions():
-        ctx = _get_ctx_from_server(srv)
+        ctx = get_ctx_from_server(srv)
         user_id, email = _extract_auth_identity(ctx, "list_subscriptions", log)
 
         log.info("[PayMCP Subscription] User: id: %s email %s ",user_id,email)
@@ -508,7 +496,7 @@ def register_subscription_tools(
         if not plan_id:
             raise RuntimeError("planId is required to start a subscription")
 
-        ctx = _get_ctx_from_server(srv)
+        ctx = get_ctx_from_server(srv)
         user_id, email = _extract_auth_identity(ctx, "start_subscription", log)
 
         result = provider.start_subscription(plan_id, str(user_id), email)
@@ -533,7 +521,7 @@ def register_subscription_tools(
         if not sub_id:
             raise RuntimeError("subscriptionId is required to cancel a subscription")
 
-        ctx = _get_ctx_from_server(srv)
+        ctx = get_ctx_from_server(srv)
         user_id, email = _extract_auth_identity(ctx, "cancel_subscription", log)
 
         result = provider.cancel_subscription(sub_id, str(user_id), email)

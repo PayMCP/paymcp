@@ -1,8 +1,10 @@
 # paymcp/payment/flows/two_step.py
 import functools
-from ...utils.messages import open_link_message, opened_webview_message
-from ..webview import open_payment_webview_if_available
 import logging
+from ...utils.messages import open_link_message
+from ...utils.context import get_ctx_from_server
+from ...utils.disconnect import is_disconnected
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
     @mcp.tool(**confirm_tool_args)
     async def _confirm_tool(payment_id: str):
         logger.info(f"[confirm_tool] Received payment_id={payment_id}")
-
+        ctx = get_ctx_from_server(mcp)
         if not payment_id:
             return {
                 "content": [{"type": "text", "text": "Missing payment_id."}],
@@ -60,9 +62,18 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             }
 
         logger.info(f"[confirm_tool] Deleting state for payment_id={payment_id}")
+        result = await func(**stored["args"])
+        if await is_disconnected(ctx):
+            logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
+            return {
+                "status": "pending",
+                "message": "Connection aborted. Call the tool again to retrieve the result.",
+                "payment_id": str(payment_id),
+                "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
+            }
         await state_store.delete(str(payment_id))
         logger.info(f"[confirm_tool] State deleted, executing tool")
-        return await func(**stored["args"])
+        return result
 
     # --- Step 1: payment initiation -------------------------------------------
     @functools.wraps(func)
@@ -73,14 +84,9 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             description=f"{func.__name__}() execution fee"
         )
 
-        if (open_payment_webview_if_available(payment_url)):
-            message = opened_webview_message(
-                payment_url, price_info["price"], price_info["currency"]
-            )
-        else:
-            message = open_link_message(
-                payment_url, price_info["price"], price_info["currency"]
-            )
+        message = open_link_message(
+            payment_url, price_info["price"], price_info["currency"]
+        )
 
         pid_str = str(payment_id)
         await state_store.set(pid_str, kwargs)

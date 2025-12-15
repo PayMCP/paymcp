@@ -181,66 +181,19 @@ class TestProgressFlow:
         assert result == {"result": "success"}
 
     @pytest.mark.asyncio
-    @patch('paymcp.payment.flows.progress.open_payment_webview_if_available')
-    async def test_progress_wrapper_webview_opened(self, mock_webview, mock_func, mock_mcp, mock_provider, price_info, mock_ctx):
-        """Test progress wrapper when webview is successfully opened."""
+    async def test_progress_wrapper_state_store_used_for_resume(self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx):
+        """State store is used to persist payment between calls."""
+        from paymcp.state.memory import InMemoryStateStore
         mock_provider.get_payment_status.return_value = "paid"
-        mock_webview.return_value = True  # Webview opened successfully
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        state_store = InMemoryStateStore()
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store=state_store)
 
         result = await wrapper(ctx=mock_ctx)
 
-        # Verify webview was attempted
-        mock_webview.assert_called_once_with("https://payment.url")
+        # After paid flow completes, state should be cleaned
+        assert await state_store.get("payment_123") is None
 
-        # Verify progress message mentions payment window
-        first_call_args = mock_ctx.report_progress.call_args_list[0]
-        assert "payment window" in first_call_args[1]["message"].lower()
-
-        # Verify original function was called
-        mock_func.assert_called_once()
-        assert result == {"result": "success"}
-
-    @pytest.mark.asyncio
-    @patch('paymcp.payment.flows.progress.open_payment_webview_if_available')
-    async def test_progress_wrapper_webview_failed(self, mock_webview, mock_func, mock_mcp, mock_provider, price_info, mock_ctx):
-        """Test progress wrapper when webview fails to open."""
-        mock_provider.get_payment_status.return_value = "paid"
-        mock_webview.return_value = False  # Webview failed to open
-
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
-
-        result = await wrapper(ctx=mock_ctx)
-
-        # Verify webview was attempted
-        mock_webview.assert_called_once_with("https://payment.url")
-
-        # Verify progress message uses link instead
-        first_call_args = mock_ctx.report_progress.call_args_list[0]
-        assert "link" in first_call_args[1]["message"].lower()
-
-        # Verify original function was called
-        mock_func.assert_called_once()
-        assert result == {"result": "success"}
-
-    @pytest.mark.asyncio
-    async def test_progress_wrapper_state_store_not_used(self, mock_func, mock_mcp, mock_provider, price_info, mock_ctx):
-        """Test that state_store parameter is accepted but not used."""
-        mock_provider.get_payment_status.return_value = "paid"
-
-        # Create a mock state store
-        mock_state_store = Mock()
-
-        # Pass state_store parameter (should be accepted but not used)
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store=mock_state_store)
-
-        result = await wrapper(ctx=mock_ctx)
-
-        # Verify state_store was NOT used
-        assert not mock_state_store.called
-
-        # Verify original function was called
         mock_func.assert_called_once()
         assert result == {"result": "success"}
 
