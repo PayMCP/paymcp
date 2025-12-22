@@ -20,7 +20,7 @@ class PayMCP:
             logger.warning("[PayMCP] Both 'mode' and 'payment_flow' were provided; 'mode' takes precedence.")
         self.payment_flow = mode if mode is not None else payment_flow
         if self.payment_flow is None:
-            self.payment_flow = PaymentFlow.TWO_STEP
+            self.payment_flow = PaymentFlow.AUTO
         flow_name = self.payment_flow.value
         self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance

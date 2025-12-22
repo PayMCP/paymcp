@@ -12,7 +12,7 @@ See the [full documentation](https://paymcp.info).
 
 - ✅ Add `@price(...)` decorators to your MCP tools to enable pay‑per‑request billing.
 - ✅ Gate tools behind **active subscriptions** (where supported) with the `@subscription(...)` decorator; helper tools included.
-- 🔁 Pay‑per‑request flows support multiple **modes** (TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
+- 🔁 Pay‑per‑request flows support multiple **modes** (AUTO / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface for custom providers.
 - ⚙️ Easy integration with `FastMCP` or other MCP servers
 
@@ -39,7 +39,7 @@ PayMCP(
     providers=[
         StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
     ],
-    mode=Mode.TWO_STEP # optional, TWO_STEP (default) / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+    mode=Mode.AUTO # optional, AUTO (default) / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
 )
 
 ```
@@ -160,13 +160,12 @@ In version 0.4.2, `paymentFlow` was renamed to `mode` (old name still works).
 
 The `mode` parameter controls how the user is guided through the pay‑per‑request payment process. Pick what fits your client:
 
-- **`Mode.TWO_STEP`** (default) — Splits the tool into two MCP methods. First call returns `payment_url` + `next_step`; the confirm method verifies and runs the original logic. Works in most clients.
+- **`Mode.AUTO`** (default) — Detects client capabilities; uses elicitation when available, otherwise falls back to RESUBMIT.
+- **`Mode.TWO_STEP`** — Splits the tool into two MCP methods. First call returns `payment_url` + `next_step`; the confirm method verifies and runs the original logic. Works in most clients.
 - **`Mode.RESUBMIT`** — Adds optional `payment_id` to the tool signature. First call returns `payment_url` + `payment_id`; second call with `payment_id` verifies then runs the tool. Similar compatibility to TWO_STEP.
 - **`Mode.ELICITATION`** — Sends a payment link via MCP elicitation (if supported). After payment, the tool completes in the same call.
 - **`Mode.PROGRESS`** — Keeps the call open, streams progress while polling the provider, and returns automatically once paid.
 - **`Mode.DYNAMIC_TOOLS`** — Temporarily exposes additional tools (e.g., `confirm_payment_*`) to steer the client/LLM through the flow.
-
-When in doubt, start with `TWO_STEP`.
 
 
 ---

@@ -1,6 +1,7 @@
 from enum import Enum
 
 class Mode(str, Enum):
+    AUTO = "auto"
     TWO_STEP = "two_step"
     PROGRESS = "progress"
     ELICITATION = "elicitation"
