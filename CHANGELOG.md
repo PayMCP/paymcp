@@ -1,5 +1,14 @@
 # Changelog
 
+# 0.7.0
+### Breaking Changes
+- Default `mode` is now `AUTO`.
+  - Clients relying on implicit defaults may observe different execution paths.
+
+### Added
+- Introduced `AUTO` mode that automatically selects between ELICITATION and RESUBMIT based on client capabilities.
+
+
 # 0.6.1
 ### Added
 - Session recovery for ELICITATION and PROGRESS modes after client timeouts/disconnects (reuse pending payment and continue).

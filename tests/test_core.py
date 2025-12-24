@@ -38,6 +38,7 @@ class TestPayMCP:
         paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
         assert paymcp.mcp == mock_mcp_instance
         assert paymcp.providers is not None
+        assert paymcp.payment_flow == PaymentFlow.AUTO
 
     def test_initialization_custom_flow(self, mock_mcp_instance, providers_config):
         """Test PayMCP initialization with custom flow."""
@@ -70,6 +71,7 @@ class TestPayMCP:
 
     def test_payment_flow_enum_values(self):
         """Test PaymentFlow enum values."""
+        assert PaymentFlow.AUTO.value == "auto"
         assert PaymentFlow.TWO_STEP.value == "two_step"
         assert PaymentFlow.ELICITATION.value == "elicitation"
         assert PaymentFlow.PROGRESS.value == "progress"

@@ -111,6 +111,30 @@ class TestFlowFactory:
 
             assert mock_make_paid_wrapper.called
 
+    def test_make_flow_auto(self):
+        """Test make_flow with auto flow."""
+        mock_module = Mock()
+        mock_make_paid_wrapper = Mock()
+        mock_module.make_paid_wrapper = mock_make_paid_wrapper
+
+        with patch("paymcp.payment.flows.import_module") as mock_import:
+            mock_import.return_value = mock_module
+
+            wrapper_factory = make_flow("auto")
+
+            # Verify correct module was imported
+            mock_import.assert_called_once_with(".auto", "paymcp.payment.flows")
+
+            # Test wrapper factory with all required parameters
+            wrapper_factory(
+                func=Mock(),
+                mcp=Mock(),
+                provider=Mock(),
+                price_info={"price": 5.0, "currency": "USD"}
+            )
+
+            assert mock_make_paid_wrapper.called
+
     def test_wrapper_factory_parameter_passing(self):
         """Test that wrapper factory correctly passes all parameters."""
         mock_module = Mock()
