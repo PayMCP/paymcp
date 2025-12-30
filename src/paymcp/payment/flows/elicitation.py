@@ -9,12 +9,16 @@ from ...utils.context import get_ctx_from_server
 logger = logging.getLogger(__name__)
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Single-step payment flow using elicitation during execution.
 
     Note: state_store is required to resume a payment after reconnects.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         ctx = kwargs.get("ctx", None)

@@ -53,13 +53,16 @@ def _create_payment_error(
 
     return err
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Resubmit payment flow .
 
     Note: state_store parameter is accepted for signature consistency
     but not used by RESUBMIT flow.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
 
 
     @functools.wraps(func)

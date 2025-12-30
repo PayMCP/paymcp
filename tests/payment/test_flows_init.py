@@ -29,14 +29,14 @@ class TestFlowFactory:
             mock_provider = Mock()
             mock_price_info = {"price": 10.0, "currency": "USD"}
 
-            result = wrapper_factory(mock_func, mock_mcp, mock_provider, mock_price_info)
+            result = wrapper_factory(mock_func, mock_mcp, {"mock": mock_provider}, mock_price_info)
 
             # Verify make_paid_wrapper was called with correct arguments
             # All flows now accept state_store and config parameters for consistency
             mock_make_paid_wrapper.assert_called_once_with(
                 func=mock_func,
                 mcp=mock_mcp,
-                provider=mock_provider,
+                providers={"mock": mock_provider},
                 price_info=mock_price_info,
                 state_store=None,
                 config=None
@@ -75,13 +75,13 @@ class TestFlowFactory:
             mock_provider = Mock()
             mock_price_info = {"price": 25.0, "currency": "EUR"}
 
-            wrapper_factory(mock_func, mock_mcp, mock_provider, mock_price_info)
+            wrapper_factory(mock_func, mock_mcp, {"mock": mock_provider}, mock_price_info)
 
             # All flows now accept state_store and config parameters for consistency
             mock_make_paid_wrapper.assert_called_once_with(
                 func=mock_func,
                 mcp=mock_mcp,
-                provider=mock_provider,
+                providers={"mock": mock_provider},
                 price_info=mock_price_info,
                 state_store=None,
                 config=None
@@ -105,7 +105,7 @@ class TestFlowFactory:
             wrapper_factory(
                 func=Mock(),
                 mcp=Mock(),
-                provider=Mock(),
+                providers={"mock": Mock()},
                 price_info={"price": 5.0, "currency": "USD"}
             )
 
@@ -129,7 +129,7 @@ class TestFlowFactory:
             wrapper_factory(
                 func=Mock(),
                 mcp=Mock(),
-                provider=Mock(),
+                providers={"mock": Mock()},
                 price_info={"price": 5.0, "currency": "USD"}
             )
 
@@ -153,13 +153,13 @@ class TestFlowFactory:
             specific_provider = Mock()
             specific_price_info = {"price": 15.50, "currency": "GBP"}
 
-            wrapper_factory(specific_func, specific_mcp, specific_provider, specific_price_info)
+            wrapper_factory(specific_func, specific_mcp, {"mock": specific_provider}, specific_price_info)
 
             # Verify exact parameter matching (all flows now include state_store and config)
             mock_make_paid_wrapper.assert_called_once_with(
                 func=specific_func,
                 mcp=specific_mcp,
-                provider=specific_provider,
+                providers={"mock": specific_provider},
                 price_info=specific_price_info,
                 state_store=None,
                 config=None
@@ -175,7 +175,7 @@ class TestFlowFactory:
             mock_import.return_value = mock_module
 
             wrapper_factory = make_flow("test_flow")
-            result = wrapper_factory(Mock(), Mock(), Mock(), {})
+            result = wrapper_factory(Mock(), Mock(), {"mock": Mock()}, {})
 
             assert result == mock_wrapper
 

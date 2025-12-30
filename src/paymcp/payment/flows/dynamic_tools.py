@@ -43,8 +43,12 @@ async def _send_notification(ctx):
         pass
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """Wrap tool: initiate payment -> hide tool -> register confirm tool."""
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
+
     tool_name = func.__name__
     if hasattr(func, '_paymcp_price_info'):
         delattr(func, '_paymcp_price_info')

@@ -12,15 +12,19 @@ from .resubmit import make_paid_wrapper as make_resubmit_wrapper
 logger = logging.getLogger(__name__)
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Auto-select payment flow based on client capabilities.
     If the client supports elicitation, use the elicitation flow; otherwise, fall back to resubmit.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
+
     resubmit_wrapper = make_resubmit_wrapper(
         func=func,
         mcp=mcp,
-        provider=provider,
+        providers=providers,
         price_info=price_info,
         state_store=state_store,
         config=config,
@@ -28,7 +32,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
     elicitation_wrapper = make_elicitation_wrapper(
         func=func,
         mcp=mcp,
-        provider=provider,
+        providers=providers,
         price_info=price_info,
         state_store=state_store,
         config=config,
@@ -46,8 +50,6 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
                 ctx = None
 
         logger.debug("[PayMCP] tool call ctx ] %s", ctx)
-
-        logger.debug("[PayMCP] tool call restored ctx ] %s", mcp._mcp_server.request_context)
 
         client_info = capture_client_from_ctx(ctx)
         capabilities = client_info.get("capabilities") or {}

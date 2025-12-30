@@ -59,14 +59,10 @@ class PayMCP:
 
                 if subscription_info:
                     # --- Set up subscription guard and tools ---
-                    provider = next(iter(self.providers.values()), None)  # get first one - TODO: allow choosing
-                    if provider is None:
-                        raise RuntimeError("[PayMCP] No payment provider configured for subscription tools")
-
                     # Register subscription tools once per PayMCP instance
                     if not getattr(self, "_subscription_tools_registered", False):
                         from .subscriptions.wrapper import register_subscription_tools
-                        register_subscription_tools(self.mcp, provider)
+                        register_subscription_tools(self.mcp, self.providers)
                         self._subscription_tools_registered = True
 
                     # Build subscription wrapper around the original tool
@@ -74,7 +70,7 @@ class PayMCP:
                     target_func = make_subscription_wrapper(
                         func,
                         self.mcp,
-                        provider,
+                        self.providers,
                         subscription_info,
                         tool_name,
                         self.state_store,
@@ -83,10 +79,6 @@ class PayMCP:
 
                 elif price_info:
                     # --- Create payment using provider ---
-                    provider = next(iter(self.providers.values()), None)  # get first one - TODO: allow choosing
-                    if provider is None:
-                        raise RuntimeError("[PayMCP] No payment provider configured")
-
                     # Deferred payment creation, so do not call provider.create_payment here
                     kwargs["description"] = description_with_price(
                         kwargs.get("description") or func.__doc__ or "",
@@ -95,7 +87,7 @@ class PayMCP:
                     target_func = self._wrapper_factory(
                         func,
                         self.mcp,
-                        provider,
+                        self.providers,
                         price_info,
                         self.state_store,
                         config=kwargs.copy(),

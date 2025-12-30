@@ -10,7 +10,7 @@ from .state_utils import sanitize_state_args
 logger = logging.getLogger(__name__)
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Implements the two‑step payment flow:
 
@@ -19,6 +19,9 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
     2. A dynamically registered tool `confirm_<tool>` waits for payment,
        validates it, and only then calls the original function.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
 
     confirm_tool_name = f"confirm_{func.__name__}_payment"
 

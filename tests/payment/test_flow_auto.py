@@ -65,7 +65,7 @@ async def test_auto_uses_elicitation_when_capable(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
         state_store=object(),
         config=None,
@@ -107,7 +107,7 @@ async def test_auto_falls_back_to_resubmit(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
         state_store=object(),
         config=None,
@@ -142,7 +142,7 @@ async def test_auto_retrieves_ctx_from_mcp_when_not_in_kwargs(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -167,7 +167,7 @@ async def test_auto_handles_get_ctx_exception_gracefully(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -195,7 +195,7 @@ async def test_auto_ctx_injected_into_kwargs_when_retrieved(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -220,7 +220,7 @@ async def test_auto_falls_back_to_resubmit_when_ctx_is_none(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -239,7 +239,7 @@ async def test_auto_falls_back_when_mcp_is_none(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=None,  # mcp is None
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -264,7 +264,7 @@ async def test_auto_handles_capabilities_none(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -284,7 +284,7 @@ async def test_auto_handles_elicitation_false(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -304,7 +304,7 @@ async def test_auto_handles_other_capabilities_without_elicitation(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -327,7 +327,7 @@ def test_signature_with_var_keyword_params(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=tool_with_kwargs,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -346,7 +346,7 @@ def test_signature_without_var_keyword_params(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=tool_without_kwargs,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -364,7 +364,7 @@ def test_signature_preserves_parameter_defaults(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=tool_with_defaults,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -404,7 +404,7 @@ def test_signature_inspection_failure_handled_gracefully(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=bad_func,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -436,7 +436,7 @@ async def test_auto_passes_positional_args_correctly(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -462,7 +462,7 @@ async def test_auto_passes_kwargs_correctly(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -499,7 +499,7 @@ async def test_auto_same_wrapper_routes_differently_per_call(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -540,7 +540,7 @@ async def test_auto_payment_id_stripped_only_for_elicitation(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -587,7 +587,7 @@ def test_wrapper_receives_all_parameters(monkeypatch):
     auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=mock_mcp,
-        provider=mock_provider,
+        providers={"mock": mock_provider},
         price_info=price_info,
         state_store=mock_state_store,
         config=mock_config,
@@ -598,7 +598,7 @@ def test_wrapper_receives_all_parameters(monkeypatch):
         params = received_params[flow_type]
         assert params["func"] is dummy_tool
         assert params["mcp"] is mock_mcp
-        assert params["provider"] is mock_provider
+        assert params["providers"] == {"mock": mock_provider}
         assert params["price_info"] is price_info
         assert params["state_store"] is mock_state_store
         assert params["config"] is mock_config

@@ -322,7 +322,7 @@ class TestMakeSubscriptionWrapper:
         ctx.request_context = None
 
         wrapper = make_subscription_wrapper(
-            original_func, mock_mcp, mock_provider, {"plan": "price_pro"}, "test_tool"
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
         )
 
         result = await wrapper(data="test_data", ctx=ctx)
@@ -339,7 +339,7 @@ class TestMakeSubscriptionWrapper:
         mock_mcp.get_context = Mock(return_value=None)
 
         wrapper = make_subscription_wrapper(
-            original_func, mock_mcp, mock_provider, {"plan": "price_pro"}, "test_tool"
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
         )
 
         with pytest.raises(RuntimeError, match="Context.*required"):
@@ -367,7 +367,7 @@ class TestMakeSubscriptionWrapper:
         ctx.request_context = None
 
         wrapper = make_subscription_wrapper(
-            original_func, mock_mcp, mock_provider, {"plan": "price_pro"}, "test_tool"
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
         )
 
         with pytest.raises(RuntimeError):
@@ -383,7 +383,7 @@ class TestMakeSubscriptionWrapper:
             return f"{a}-{b}"
 
         wrapper = make_subscription_wrapper(
-            original_func, mock_mcp, mock_provider, {"plan": "price_pro"}, "test_tool"
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
         )
 
         import inspect

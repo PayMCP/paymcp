@@ -72,7 +72,7 @@ class TestTwoStepFlow:
         with patch("paymcp.payment.flows.two_step.open_link_message") as mock_link_msg:
             mock_link_msg.return_value = "Open payment link"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
             result = await wrapper(test_param="test_value")
 
             mock_provider.create_payment.assert_called_once_with(
@@ -92,7 +92,7 @@ class TestTwoStepFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
     ):
         """Ensure ctx is not persisted to state."""
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         fake_ctx = object()
         await wrapper(ctx=fake_ctx, test_param="test_value")
@@ -118,7 +118,7 @@ class TestTwoStepFlow:
         mock_mcp.tool = capture_tool
 
         # Setup: First run initiate step
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
         await wrapper(original_arg="original_value")
 
         # Verify confirm tool was registered
@@ -155,7 +155,7 @@ class TestTwoStepFlow:
 
         mock_mcp.tool = capture_tool
 
-        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         # Test with unknown payment ID - should return error object
         result = await confirm_func("unknown_payment_id")
@@ -186,7 +186,7 @@ class TestTwoStepFlow:
         mock_mcp.tool = capture_tool
 
         # Setup: First run initiate step
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
         await wrapper(test_arg="test_value")
 
         # Set provider to return unpaid status
@@ -212,7 +212,7 @@ class TestTwoStepFlow:
         self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
     ):
         """Test that the confirm tool is properly registered."""
-        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         # Verify the confirm tool was registered
         mock_mcp.tool.assert_called_once_with(
@@ -227,7 +227,7 @@ class TestTwoStepFlow:
         mock_func.__doc__ = "Original function docstring"
         mock_func.__name__ = "original_function"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         assert wrapper.__name__ == "original_function"
         assert wrapper.__doc__ == "Original function docstring"
@@ -243,7 +243,7 @@ class TestTwoStepFlow:
             ("payment_2", "https://payment2.url")
         ]
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         # Initiate two payments
         await wrapper(first_call="value1")
@@ -272,7 +272,7 @@ class TestTwoStepFlow:
         mock_mcp.tool = capture_tool
 
         # Setup: First run initiate step
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
         await wrapper(debug_arg="debug_value")
 
         # Test the confirm step (should log info about payment_id)
@@ -300,7 +300,7 @@ class TestTwoStepFlow:
 
         mock_mcp.tool = capture_tool
 
-        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         # Test with empty string payment ID - should return error object (covers line 30)
         result = await confirm_func("")
@@ -329,7 +329,7 @@ class TestTwoStepFlow:
 
         mock_mcp.tool = capture_tool
 
-        make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+        make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, mock_state_store)
 
         # Test with None payment ID - should return error object (covers line 30)
         result = await confirm_func(None)

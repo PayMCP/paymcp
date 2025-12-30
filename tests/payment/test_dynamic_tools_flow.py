@@ -54,7 +54,7 @@ async def test_dynamic_tools_hides_original_tool_on_payment(mock_mcp, mock_provi
     mock_mcp._tools['test_func'] = test_func
 
     # Wrap with DYNAMIC_TOOLS flow
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initially, original tool should be visible
     assert 'test_func' in mock_mcp._tools
@@ -104,7 +104,7 @@ async def test_dynamic_tools_restores_tool_after_payment(mock_mcp, mock_provider
     mock_mcp._tools['test_func'] = test_func
 
     # Wrap with DYNAMIC_TOOLS flow
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test_input")
@@ -159,7 +159,7 @@ async def test_dynamic_tools_unique_confirmation_per_payment(mock_mcp, mock_prov
 
     mock_mcp._tools['test_func'] = test_func
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Make two payment initiations
     result1 = await wrapper(data="first")
@@ -194,7 +194,7 @@ async def test_dynamic_tools_handles_unpaid_status(mock_mcp, mock_provider, pric
 
     mock_mcp._tools['test_func'] = test_func
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test")
@@ -229,7 +229,7 @@ async def test_dynamic_tools_handles_missing_payment_id(mock_mcp, mock_provider,
 
     mock_mcp._tools['test_func'] = test_func
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test")
@@ -257,7 +257,7 @@ async def test_dynamic_tools_handles_provider_errors(mock_mcp, mock_provider, pr
 
     mock_mcp._tools['test_func'] = test_func
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test")
@@ -288,7 +288,7 @@ async def test_dynamic_tools_without_send_notification(mock_mcp, mock_provider, 
 
     mock_mcp._tools['test_func'] = test_func
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Should still work without notifications
     result = await wrapper(data="test")
@@ -309,7 +309,7 @@ async def test_dynamic_tools_context_extraction_from_args(mock_mcp, mock_provide
         return {"result": "success"}
 
     mock_mcp._tools['test_func'] = test_func
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Create mock context object with required method
     mock_ctx = Mock()
@@ -339,7 +339,7 @@ async def test_dynamic_tools_handles_payment_status_error(mock_mcp, mock_provide
         return {"result": "success"}
 
     mock_mcp._tools['test_func'] = test_func
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test")
@@ -368,7 +368,7 @@ async def test_dynamic_tools_removes_price_attribute(mock_mcp, mock_provider, pr
     assert hasattr(test_func, '_paymcp_price_info')
 
     # Wrap with DYNAMIC_TOOLS flow (wrapper not used, just checking side effect)
-    _ = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    _ = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Attribute should be removed to prevent re-wrapping
     assert not hasattr(test_func, '_paymcp_price_info')
@@ -383,7 +383,7 @@ async def test_dynamic_tools_handles_missing_session_payment(mock_mcp, mock_prov
         return {"result": "success"}
 
     mock_mcp._tools['test_func'] = test_func
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test")
@@ -413,7 +413,7 @@ async def test_dynamic_tools_deletes_confirmation_tool(mock_mcp, mock_provider, 
     mock_mcp._tool_manager = mock_tool_manager
     mock_mcp._tools['test_func'] = test_func
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info)
 
     # Initiate payment
     init_result = await wrapper(data="test")
