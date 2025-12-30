@@ -45,6 +45,10 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             except Exception:
                 ctx = None
 
+        logger.debug("[PayMCP] tool call ctx ] %s", ctx)
+
+        logger.debug("[PayMCP] tool call restored ctx ] %s", mcp._mcp_server.request_context)
+
         client_info = capture_client_from_ctx(ctx)
         capabilities = client_info.get("capabilities") or {}
         logger.debug(f"[PayMCP Auto] Client capabilities: {capabilities}")
