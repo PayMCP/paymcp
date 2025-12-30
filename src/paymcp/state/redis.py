@@ -18,9 +18,10 @@ class RedisStateStore:
         self.ttl = ttl
         self.lock_timeout = lock_timeout
 
-    async def set(self, key: str, args: Any) -> None:
+    async def set(self, key: str, args: Any, ttl_seconds: Optional[int] = None) -> None:
         data = json.dumps({"args": args, "ts": int(time.time() * 1000)})
-        await self.redis.setex(f"{self.prefix}{key}", self.ttl, data)
+        ttl = self.ttl if ttl_seconds is None else ttl_seconds
+        await self.redis.setex(f"{self.prefix}{key}", ttl, data)
 
     async def get(self, key: str) -> Optional[Dict[str, Any]]:
         raw = await self.redis.get(f"{self.prefix}{key}")
