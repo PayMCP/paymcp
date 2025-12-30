@@ -95,6 +95,23 @@ class TestResubmitFlow:
         assert stored["args"]["arg3"] == {"nested": "data"}
         assert "ts" in stored
 
+    @pytest.mark.asyncio
+    async def test_payment_initiation_drops_ctx_from_state(
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
+    ):
+        """Ensure ctx is not persisted to state."""
+        wrapper = make_paid_wrapper(
+            mock_func, mock_mcp, mock_provider, price_info, state_store
+        )
+
+        fake_ctx = object()
+        with pytest.raises(RuntimeError):
+            await wrapper(ctx=fake_ctx, test_arg="value")
+
+        stored = await state_store.get("payment_123")
+        assert "ctx" not in stored["args"]
+        assert stored["args"]["test_arg"] == "value"
+
     # ===== Payment Confirmation Tests =====
 
     @pytest.mark.asyncio

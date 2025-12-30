@@ -6,6 +6,7 @@ from inspect import Parameter
 from typing import Annotated, Optional
 from pydantic import Field
 from ...utils.context import get_ctx_from_server
+from .state_utils import sanitize_state_args
 from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             )
 
             pid_str = str(payment_id)
-            await state_store.set(pid_str, kwargs)
+            await state_store.set(pid_str, sanitize_state_args(kwargs))
 
             logger.debug(f"[PayMCP:Resubmit] created payment id={pid_str} url={payment_url}")
 

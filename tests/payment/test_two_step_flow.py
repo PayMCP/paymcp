@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
+from contextlib import asynccontextmanager
 from paymcp.payment.flows.two_step import make_paid_wrapper
 from paymcp.providers.base import BasePaymentProvider
 
@@ -53,9 +54,14 @@ class TestTwoStepFlow:
         async def mock_delete(key):
             store._storage.pop(key, None)
 
+        @asynccontextmanager
+        async def mock_lock(_key):
+            yield
+
         store.set = mock_set
         store.get = mock_get
         store.delete = mock_delete
+        store.lock = mock_lock
         return store
 
     @pytest.mark.asyncio
@@ -80,6 +86,20 @@ class TestTwoStepFlow:
             assert result["payment_id"] == "payment_123"
             assert result["next_step"] == "confirm_test_tool_payment"
             assert mock_state_store._storage["payment_123"]["args"] == {"test_param": "test_value"}
+
+    @pytest.mark.asyncio
+    async def test_initiate_step_drops_ctx_from_state(
+        self, mock_func, mock_mcp, mock_provider, price_info, mock_state_store
+    ):
+        """Ensure ctx is not persisted to state."""
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, mock_state_store)
+
+        fake_ctx = object()
+        await wrapper(ctx=fake_ctx, test_param="test_value")
+
+        stored_args = mock_state_store._storage["payment_123"]["args"]
+        assert "ctx" not in stored_args
+        assert stored_args["test_param"] == "test_value"
 
     @pytest.mark.asyncio
     async def test_confirm_step_successful_payment(
