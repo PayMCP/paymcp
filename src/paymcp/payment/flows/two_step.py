@@ -96,7 +96,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     # --- Step 1: payment initiation -------------------------------------------
     @functools.wraps(func)
     async def _initiate_wrapper(*args, **kwargs):
-        payment_id, payment_url = provider.create_payment(
+        payment_id, payment_url, *_ = provider.create_payment(
             amount=price_info["price"],
             currency=price_info["currency"],
             description=f"{func.__name__}() execution fee"

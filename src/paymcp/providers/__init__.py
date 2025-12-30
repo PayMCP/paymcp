@@ -5,6 +5,7 @@ from .paypal import PayPalProvider
 from .square import SquareProvider
 from .coinbase import CoinbaseProvider
 from .mock import MockPaymentProvider
+from .x402 import X402Provider
 from .base import BasePaymentProvider
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "SquareProvider",
     "CoinbaseProvider",
     "MockPaymentProvider",
+    "X402Provider",
 ]
 
 from typing import Any, Iterable, Mapping, Type, Dict, Optional
@@ -27,7 +29,8 @@ PROVIDER_MAP = {
     "adyen": AdyenProvider,
     "square": SquareProvider,
     "coinbase": CoinbaseProvider,
-    "mock": MockPaymentProvider
+    "mock": MockPaymentProvider,
+    "x402": X402Provider,
 }
 
 

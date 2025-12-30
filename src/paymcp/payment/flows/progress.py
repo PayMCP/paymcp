@@ -78,7 +78,7 @@ def make_paid_wrapper(
 
         # No stored payment -> create new one
         if payment_id is None or payment_url is None:
-            payment_id, payment_url = provider.create_payment(
+            payment_id, payment_url, *_ = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee"

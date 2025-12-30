@@ -92,7 +92,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         if not existed_payment_id:
             # Create payment session
             logger.debug(f"[PayMCP:Resubmit] creating payment for {price_info}")
-            payment_id, payment_url = provider.create_payment(
+            payment_id, payment_url, *_ = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee"

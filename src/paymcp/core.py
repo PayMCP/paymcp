@@ -22,10 +22,29 @@ class PayMCP:
         self.payment_flow = mode if mode is not None else payment_flow
         if self.payment_flow is None:
             self.payment_flow = PaymentFlow.AUTO
-        flow_name = self.payment_flow.value
-        self._wrapper_factory = make_flow(flow_name)
         self.mcp = mcp_instance
         self.providers = build_providers(providers or {})
+        provider_keys = set(self.providers.keys())
+
+        if "x402" in provider_keys and self.payment_flow not in (PaymentFlow.X402, PaymentFlow.AUTO):
+            new_mode = PaymentFlow.AUTO if len(provider_keys) > 1 else PaymentFlow.X402
+            logger.warning(
+                "[PayMCP] %s mode is not supported for x402 provider. Switching to %s mode.",
+                self.payment_flow,
+                new_mode,
+            )
+            self.payment_flow = new_mode
+
+        if self.payment_flow == PaymentFlow.X402 and "x402" not in provider_keys:
+            logger.warning(
+                "[PayMCP] x402 mode is not supported for providers: '%s'. Switching to %s mode.",
+                ", ".join(provider_keys),
+                PaymentFlow.RESUBMIT,
+            )
+            self.payment_flow = PaymentFlow.RESUBMIT
+
+        flow_name = self.payment_flow.value
+        self._wrapper_factory = make_flow(flow_name)
         self._subscription_tools_registered = False
 
         if state_store is None:
