@@ -21,8 +21,16 @@ def random_nonce_hex(bytes_len: int = 16) -> str:
 
 
 def ed25519_key_from_base64_secret(secret_b64: str) -> Ed25519PrivateKey:
-    seed = base64.b64decode(secret_b64.strip())
-    return Ed25519PrivateKey.from_private_bytes(seed)
+    raw = base64.b64decode(secret_b64.strip())
+
+    # CDP dashboard secret decodes to 64 bytes; Ed25519 seed is the first 32 bytes.
+    if len(raw) == 64:
+        raw = raw[:32]
+
+    if len(raw) != 32:
+        raise ValueError(f"CDP api_key_secret must decode to 32 bytes (got {len(raw)} bytes)")
+
+    return Ed25519PrivateKey.from_private_bytes(raw)
 
 
 def generate_cdp_bearer_jwt(
