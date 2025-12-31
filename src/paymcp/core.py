@@ -7,6 +7,7 @@ from .payment.payment_flow import PaymentFlow, Mode
 from importlib.metadata import version, PackageNotFoundError
 from .utils.context import capture_client_from_ctx
 import logging
+import json
 logger = logging.getLogger(__name__)
 
 try:
@@ -58,6 +59,9 @@ class PayMCP:
         if self.payment_flow == PaymentFlow.DYNAMIC_TOOLS:
             from .payment.flows.dynamic_tools import setup_flow
             setup_flow(mcp_instance, self, self.payment_flow)
+
+        if self.payment_flow == PaymentFlow.X402 or self.payment_flow == PaymentFlow.AUTO:
+            self._patch_tool_call()
 
         if self.payment_flow == PaymentFlow.AUTO:
             self._patch_list_tool_for_auto() #removing payment_id parameter in case if client support ELICITATION or x402
@@ -131,6 +135,56 @@ class PayMCP:
             return wrapper
 
         self.mcp.tool = patched_tool
+
+    
+    def _patch_tool_call(self):
+        if not hasattr(self.mcp, "_tool_manager"):
+            return
+        
+        tm = self.mcp._tool_manager
+
+        if hasattr(tm.call_tool, "_paymcp_patched"): 
+            return    # Only patch once
+
+        original_call_tool = tm.call_tool
+
+        async def patched_call_tool(name, arguments, context=None, convert_result: bool = False):
+            try:
+                res =  await original_call_tool(
+                    name,
+                    arguments,
+                    context=context,
+                    convert_result= convert_result,
+                )
+                content = None
+                if isinstance(res, tuple) and len(res) > 0:
+                    content = res[0]
+                elif isinstance(res, list):
+                    content = res
+
+                if content and len(content) > 0:
+                    first = content[0]
+
+                    text = getattr(first, "text", None)
+                    if isinstance(text, str):
+                        try:
+                            parsed = json.loads(text)
+                        except Exception:
+                            parsed = None
+
+
+                    if isinstance(parsed, dict) and "error" in parsed:
+                        error = parsed["error"]
+                        raise RuntimeError(json.dumps(error)) #original fastmcp sdk adds string before error body - but we need keep clean json to return x402 error in body
+                return res
+            except Exception as e:
+                raise
+
+        patched_call_tool._paymcp_patched = True
+        patched_call_tool._paymcp_original = original_call_tool
+
+        tm.call_tool = patched_call_tool
+        logger.debug("[PayMCP] Patched FastMCP ToolManager.call_tool")
     
     def _patch_list_tool_for_auto(self):
         if not hasattr(self.mcp, '_tool_manager'):

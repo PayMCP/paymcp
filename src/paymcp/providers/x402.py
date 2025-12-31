@@ -159,7 +159,7 @@ class X402Provider(BasePaymentProvider):
             self.logger.error("[PayMCP] Can't generate CDP token. Proceeding without authentication. %s", exc)
             return None
 
-    def create_payment(self, amount: float, _currency: str, description: str) -> Tuple[str, str, Any]:
+    def create_payment(self, amount: float, currency: str, description: str) -> Tuple[str, str, Any]:
         challenge_id = str(uuid4())
         payment_required = (
             self.get_payment_requirements_v1(amount)

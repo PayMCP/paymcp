@@ -4,36 +4,88 @@ import functools
 import json
 import logging
 from typing import Any, Dict, Optional
-
 from ...utils.context import get_ctx_from_server, capture_client_from_ctx
+
+
 
 logger = logging.getLogger(__name__)
 
 
-def _get_headers(ctx: Any) -> Dict[str, Any]:
+def _get_headers(ctx: Any) -> Dict[str, str]:
+    """Return HTTP headers as a plain dict.
+
+    Works with Starlette `Headers` (mapping-like) and plain dict.
+    """
     request_context = getattr(ctx, "request_context", None) if ctx is not None else None
     req = getattr(request_context, "request", None) if request_context is not None else None
     headers = getattr(req, "headers", None) if req is not None else None
+
     if headers is None:
         return {}
+
     if isinstance(headers, dict):
-        return headers
+        # Ensure string keys/values
+        return {str(k): str(v) for k, v in headers.items()}
+
+    # Starlette Headers / mapping-like
+    try:
+        return {str(k): str(v) for k, v in dict(headers).items()}
+    except Exception:
+        pass
+
     get = getattr(headers, "get", None)
     if callable(get):
-        return headers
+        # Best-effort fall back to mapping interface
+        try:
+            return {str(k): str(headers.get(k)) for k in headers.keys()}  # type: ignore[attr-defined]
+        except Exception:
+            return {}
+
     return {}
 
 
 def _get_meta(ctx: Any) -> Dict[str, Any]:
+    """Return request meta as a dict.
+
+    In FastMCP, meta typically lives on `ctx.request_context.meta` and is often a
+    Pydantic model (so it's not a plain dict).
+    """
     request_context = getattr(ctx, "request_context", None) if ctx is not None else None
     meta = getattr(request_context, "meta", None) if request_context is not None else None
-    if meta is None and isinstance(request_context, dict):
-        meta = request_context.get("meta")
+
     if meta is None:
-        meta = getattr(ctx, "meta", None)
+        # Fallbacks for other runtimes
+        meta = getattr(ctx, "meta", None) if ctx is not None else None
+
+    if meta is None:
+        return {}
+
     if isinstance(meta, dict):
         return meta
-    return {}
+
+    # Pydantic v2
+    dump = getattr(meta, "model_dump", None)
+    if callable(dump):
+        try:
+            data = dump()
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    # Pydantic v1
+    dump = getattr(meta, "dict", None)
+    if callable(dump):
+        try:
+            data = dump()
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    # Generic object
+    try:
+        return vars(meta)
+    except Exception:
+        return {}
 
 
 def _get_header(headers: Any, name: str) -> Optional[str]:
@@ -68,7 +120,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             f"StateStore is required for RESUBMIT x402 flow but not provided for tool {func.__name__}"
         )
 
-    if not price_info or "price" not in price_info or "currency" not in price_info:
+    if not price_info or "price" not in price_info:
         raise RuntimeError(f"Invalid price info for tool {func.__name__}")
 
     @functools.wraps(func)
@@ -92,7 +144,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
         if not payment_sig_b64:
             meta = _get_meta(ctx)
-            meta_payment = meta.get("x402/payment") if isinstance(meta, dict) else None
+            meta_payment = meta.get("x402/payment")
             if meta_payment is not None:
                 payment_sig_b64 = base64.b64encode(
                     json.dumps(meta_payment).encode("utf-8")
@@ -131,14 +183,20 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
             await state_store.set(str(challenge_id), {"paymentData": payment_data})
 
-            return {
-                "error": {
-                    "message": "Payment required",
-                    "code": 402,
-                    "data": payment_data,
-                },
-                "isError": True,
-            }
+            #according to x402 github - payment request can be sent in JSON-RPC response as
+            # {
+            # "jsonrpc": "2.0",
+            # "id": REQ_ID,
+            # "error": {
+            #   "code": 402,
+            #   "message": "Payment required",
+            #   "data": ...
+            # }
+            #  https://github.com/coinbase/x402/blob/main/specs/transports-v2/mcp.md
+
+
+            return {"error": {"message": "Payment required", "code": 402, "data": payment_data}}
+
 
         sig = json.loads(base64.b64decode(payment_sig_b64).decode("utf-8"))
 
