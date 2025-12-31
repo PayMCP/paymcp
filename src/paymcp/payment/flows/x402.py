@@ -154,15 +154,15 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         session_id = client_info.get("sessionId")
 
         if not payment_sig_b64:
-            payment_result = provider.create_payment(
+            newpayment = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee",
             )
             payment_id, _, payment_data = (
-                payment_result[0],
-                payment_result[1],
-                payment_result[2] if len(payment_result) > 2 else None,
+                newpayment[0],
+                newpayment[1],
+                newpayment[2] if len(newpayment) > 2 else None,
             )
 
             if not payment_data:

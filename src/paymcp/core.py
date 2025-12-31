@@ -6,6 +6,7 @@ from .payment.flows import make_flow
 from .payment.payment_flow import PaymentFlow, Mode
 from importlib.metadata import version, PackageNotFoundError
 from .utils.context import capture_client_from_ctx
+from .utils.x402 import build_x402_middleware
 import logging
 import json
 logger = logging.getLogger(__name__)
@@ -239,3 +240,9 @@ class PayMCP:
         wrapped._paymcp_list_tools_patched = True
         self.mcp._tool_manager.list_tools = wrapped
         logger.debug("[PayMCP] tools/list handler is patched for Mode.AUTO ")
+    
+    def get_client_info(self, session_id:str):
+        return {}
+
+    def get_x402_middleware(self):
+        return build_x402_middleware(self.providers, self.state_store, self.paidtools, self.payment_flow, logger);

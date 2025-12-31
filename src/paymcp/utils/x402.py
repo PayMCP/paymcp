@@ -1,12 +1,12 @@
 import base64
 import json
+from ..payment.payment_flow import Mode
 
 def build_x402_middleware(
     providers,
     state_store,
     paidtools,
     mode,
-    get_client_info,
     logger,
 ):
     try:
@@ -39,15 +39,15 @@ def build_x402_middleware(
                     return await call_next(request)
 
                 session_id = request.headers.get("mcp-session-id") or ""
-                client_info = await get_client_info(session_id)
+                #client_info = await get_client_info(session_id)
 
-                capabilities = (client_info or {}).get("capabilities") or {}
-                client_x402 = bool(capabilities.get("x402"))
+                #capabilities = (client_info or {}).get("capabilities") or {}
+                #logger.debug("[PayMCP] client capabilities %s",capabilities)
+                client_x402 = False #bool(capabilities.get("x402")) #TODO check if client supports x402 for mode.AUTO
 
-                mode_str = str(mode).lower()
                 if not (
-                    mode_str.endswith("x402")
-                    or (mode_str.endswith("auto") and client_x402)
+                    mode == Mode.X402
+                    or (mode == Mode.AUTO and client_x402)
                 ):
                     return await call_next(request)
 
@@ -64,24 +64,22 @@ def build_x402_middleware(
                 if payment_sig:
                     return await call_next(request)
 
-                create_res = await provider.create_payment(
+                newpayment = provider.create_payment(
                     price_info["amount"],
                     price_info["currency"],
                     price_info.get("description", ""),
                 )
 
-                payment_id = create_res["paymentId"]
-                payment_data = create_res["paymentData"]
+                payment_id, _, payment_data = (
+                    newpayment[0],
+                    newpayment[1],
+                    newpayment[2] if len(newpayment) > 2 else None,
+                )
                 x402_version = payment_data.get("x402Version")
 
+
                 if x402_version == 1:
-                    sid = client_info.get("sessionId") or session_id
-                    if not sid:
-                        return JSONResponse(
-                            {"error": "No session id provided by MCP client"},
-                            status_code=400,
-                        )
-                    await state_store.set(f"{sid}-{tool_name}", {"paymentData": payment_data})
+                    await state_store.set(f"{session_id}-{tool_name}", {"paymentData": payment_data})
                 else:
                     await state_store.set(str(payment_id), {"paymentData": payment_data})
 
@@ -90,7 +88,7 @@ def build_x402_middleware(
                 ).decode()
 
                 if logger:
-                    logger.info("[PayMCP] sending x402 payment-required")
+                    logger.debug("[PayMCP] sending x402 payment-required")
 
                 resp = JSONResponse(payment_data, status_code=402)
                 resp.headers["PAYMENT-REQUIRED"] = header_value
