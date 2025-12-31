@@ -5,7 +5,7 @@ description = "Provider-agnostic payment layer for MCP (Model Context Protocol) 
 authors = [
     {name = "PayMCP Open Source Contributors", email = "dev@paymcp.info"},
 ]
-dependencies = ["requests>=2.32.4", "pydantic>=2.11.7", "cryptography>=41.0.0"]
+dependencies = ["requests>=2.32.4", "pydantic>=2.11.7", "cryptography>=46.0.3"]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
