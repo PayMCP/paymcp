@@ -4,13 +4,16 @@ import pytest
 import logging
 import json
 import base64
+from types import SimpleNamespace
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from paymcp.subscriptions.wrapper import (
     _safe_get,
+    _normalize_email,
     _get_bearer_token_from_ctx,
     _extract_auth_identity,
     ensure_subscription_allowed,
     make_subscription_wrapper,
+    register_subscription_tools,
 )
 
 
@@ -109,6 +112,31 @@ class TestGetBearerTokenFromCtx:
 
         assert result == "byte_token"
 
+    def test_extract_bearer_token_headers_none(self, mock_logger):
+        ctx = Mock()
+        ctx.request_context = Mock()
+        ctx.request_context.request = Mock()
+        ctx.request_context.request.headers = None
+        assert _get_bearer_token_from_ctx(ctx, mock_logger) is None
+
+    def test_extract_bearer_token_headers_get_raises(self, mock_logger):
+        class BadHeaders:
+            def get(self, _name):
+                raise RuntimeError("boom")
+
+        ctx = Mock()
+        ctx.request_context = Mock()
+        ctx.request_context.request = Mock()
+        ctx.request_context.request.headers = BadHeaders()
+        assert _get_bearer_token_from_ctx(ctx, mock_logger) is None
+
+    def test_extract_bearer_token_empty_value(self, mock_logger):
+        ctx = Mock()
+        ctx.request_context = Mock()
+        ctx.request_context.request = Mock()
+        ctx.request_context.request.headers = {"authorization": "Bearer "}
+        assert _get_bearer_token_from_ctx(ctx, mock_logger) is None
+
 
 class TestExtractAuthIdentity:
     """Test the _extract_auth_identity function."""
@@ -189,6 +217,30 @@ class TestExtractAuthIdentity:
 
         assert user_id == "user123"
         assert email is None
+
+    def test_extract_from_request_context_dict(self, mock_logger):
+        ctx = SimpleNamespace(
+            authInfo=None,
+            request_context={"authInfo": {"userId": "ctx_user", "email": "ctx@example.com"}},
+        )
+        user_id, email = _extract_auth_identity(ctx, "test_tool", mock_logger)
+        assert user_id == "ctx_user"
+        assert email == "ctx@example.com"
+
+    def test_extract_from_meta_object(self, mock_logger):
+        meta = SimpleNamespace(authInfo={"userId": "meta_user", "email": "meta@example.com"})
+        ctx = SimpleNamespace(
+            authInfo=None,
+            request_context=SimpleNamespace(meta=meta),
+        )
+        user_id, email = _extract_auth_identity(ctx, "test_tool", mock_logger)
+        assert user_id == "meta_user"
+        assert email == "meta@example.com"
+
+
+class TestNormalizeEmail:
+    def test_normalize_email_empty(self):
+        assert _normalize_email("") is None
 
 
 class TestEnsureSubscriptionAllowed:
@@ -286,6 +338,64 @@ class TestEnsureSubscriptionAllowed:
             await ensure_subscription_allowed(
                 mock_provider, subscription_info, "user123", "test@example.com", "test_tool", mock_logger
             )
+
+    @pytest.mark.asyncio
+    async def test_plan_object_with_empty_list(self, mock_provider, mock_logger):
+        class SubInfo:
+            plan = []
+
+        await ensure_subscription_allowed(
+            mock_provider, SubInfo(), "user123", "test@example.com", "test_tool", mock_logger
+        )
+        mock_provider.get_subscriptions.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_provider_error_is_raised(self, mock_logger):
+        mock_provider = Mock()
+        mock_provider.get_subscriptions.side_effect = RuntimeError("boom")
+        subscription_info = {"plan": "price_pro"}
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await ensure_subscription_allowed(
+                mock_provider, subscription_info, "user123", "test@example.com", "test_tool", mock_logger
+            )
+
+    @pytest.mark.asyncio
+    async def test_current_subscriptions_alternate_key(self, mock_logger):
+        mock_provider = Mock()
+        mock_provider.get_subscriptions.return_value = {
+            "currentSubscriptions": [{"planId": "price_pro", "status": "active"}],
+            "availableSubscriptions": [],
+        }
+        subscription_info = {"plan": "price_pro"}
+        await ensure_subscription_allowed(
+            mock_provider, subscription_info, "user123", "test@example.com", "test_tool", mock_logger
+        )
+
+    @pytest.mark.asyncio
+    async def test_current_subscriptions_non_list_and_available_not_list(self, mock_logger):
+        mock_provider = Mock()
+        mock_provider.get_subscriptions.return_value = {
+            "current_subscriptions": "not-a-list",
+            "availableSubscriptions": "bad",
+        }
+        subscription_info = {"plan": "price_pro"}
+        with pytest.raises(RuntimeError):
+            await ensure_subscription_allowed(
+                mock_provider, subscription_info, "user123", "test@example.com", "test_tool", mock_logger
+            )
+
+    @pytest.mark.asyncio
+    async def test_skips_non_dict_subscriptions(self, mock_logger):
+        mock_provider = Mock()
+        mock_provider.get_subscriptions.return_value = {
+            "current_subscriptions": ["bad", {"planId": "price_pro", "status": "active"}],
+            "available_subscriptions": [],
+        }
+        subscription_info = {"plan": "price_pro"}
+        await ensure_subscription_allowed(
+            mock_provider, subscription_info, "user123", "test@example.com", "test_tool", mock_logger
+        )
 
 
 class TestMakeSubscriptionWrapper:
@@ -391,3 +501,129 @@ class TestMakeSubscriptionWrapper:
         params = list(sig.parameters.keys())
         assert "a" in params
         assert "b" in params
+
+    def test_wrapper_raises_without_provider(self, mock_mcp):
+        async def original_func():
+            return "result"
+
+        with pytest.raises(RuntimeError, match="No payment provider configured"):
+            make_subscription_wrapper(original_func, mock_mcp, {}, {"plan": "price_pro"}, "test_tool")
+
+    @pytest.mark.asyncio
+    async def test_wrapper_accepts_ctx_positional(self, mock_provider, mock_mcp):
+        async def original_func(*_args, ctx=None):
+            return "ok"
+
+        ctx = Mock(spec=[])
+        ctx.authInfo = {"userId": "user123", "email": "test@example.com"}
+        ctx.request_context = None
+
+        wrapper = make_subscription_wrapper(
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
+        )
+
+        result = await wrapper("arg1", ctx)
+        assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_wrapper_handles_get_ctx_exception(self, mock_provider, mock_mcp, monkeypatch):
+        async def original_func(ctx=None):
+            return "ok"
+
+        monkeypatch.setattr(
+            "paymcp.subscriptions.wrapper.get_ctx_from_server",
+            lambda _mcp: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+
+        wrapper = make_subscription_wrapper(
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
+        )
+
+        with pytest.raises(RuntimeError, match="Context"):
+            await wrapper()
+
+    def test_signature_preservation_failure_is_ignored(self, mock_provider, mock_mcp, monkeypatch):
+        async def original_func(ctx=None):
+            return "ok"
+
+        monkeypatch.setattr("inspect.signature", lambda _fn: (_ for _ in ()).throw(TypeError("bad sig")))
+        wrapper = make_subscription_wrapper(
+            original_func, mock_mcp, {"mock": mock_provider}, {"plan": "price_pro"}, "test_tool"
+        )
+        assert callable(wrapper)
+
+
+class TestRegisterSubscriptionTools:
+    @pytest.fixture
+    def mock_provider(self):
+        provider = Mock()
+        provider.get_subscriptions = Mock(return_value={"current_subscriptions": []})
+        provider.start_subscription = Mock(return_value={"ok": True})
+        provider.cancel_subscription = Mock(return_value={"ok": True})
+        return provider
+
+    def test_register_subscription_tools_with_input_schema(self, mock_provider):
+        class DummyServer:
+            def __init__(self):
+                self.registered = {}
+                self.schemas = {}
+                self._ctx = None
+
+            def get_context(self):
+                return self._ctx
+
+            def tool(self, name: str, description: str, input_schema=None):
+                self.schemas[name] = input_schema
+
+                def decorator(fn):
+                    self.registered[name] = fn
+                    return fn
+
+                return decorator
+
+        server = DummyServer()
+        ctx = SimpleNamespace(authInfo={"userId": "user123", "email": "test@example.com"})
+        server._ctx = ctx
+
+        register_subscription_tools(server, {"mock": mock_provider})
+
+        assert server.schemas["start_subscription"] is not None
+        assert server.schemas["cancel_subscription"] is not None
+
+    @pytest.mark.asyncio
+    async def test_subscription_tool_handlers(self, mock_provider):
+        class DummyServer:
+            def __init__(self):
+                self.registered = {}
+                self._ctx = None
+
+            def get_context(self):
+                return self._ctx
+
+            def tool(self, name: str, description: str, input_schema=None):
+                def decorator(fn):
+                    self.registered[name] = fn
+                    return fn
+
+                return decorator
+
+        server = DummyServer()
+        ctx = SimpleNamespace(authInfo={"userId": "user123", "email": "test@example.com"})
+        server._ctx = ctx
+
+        register_subscription_tools(server, {"mock": mock_provider})
+
+        result = await server.registered["list_subscriptions"]()
+        assert result["content"][0]["type"] == "text"
+
+        result = await server.registered["start_subscription"]("plan-1")
+        assert json.loads(result["content"][0]["text"])["ok"] is True
+
+        result = await server.registered["cancel_subscription"]("sub-1")
+        assert json.loads(result["content"][0]["text"])["ok"] is True
+
+        with pytest.raises(RuntimeError, match="planId is required"):
+            await server.registered["start_subscription"]("")
+
+        with pytest.raises(RuntimeError, match="subscriptionId is required"):
+            await server.registered["cancel_subscription"]("")

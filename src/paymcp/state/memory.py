@@ -61,6 +61,7 @@ class InMemoryStateStore:
         try:
             await self._sweeper_task
         except asyncio.CancelledError:
+            # Expected during normal shutdown after cancelling the sweeper task.
             pass
         self._sweeper_task = None
         self._sweeper_stop = asyncio.Event()

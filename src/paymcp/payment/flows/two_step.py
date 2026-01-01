@@ -79,6 +79,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     ):
                         call_args["ctx"] = ctx
                 except Exception:
+                    #continuing without ctx.
                     pass
             result = await func(**call_args)
             if await is_disconnected(ctx):
