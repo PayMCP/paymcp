@@ -234,7 +234,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
         if not expected:
             log.debug("[PayMCP] %s %s %s", payment_data.get("accepts"), network_str, pay_to_address)
-            raise RuntimeError("Cannot locate accepted payment mehtod")
+            raise RuntimeError("Cannot locate accepted payment mehtod") #pay_to_address will be None for solana x402version=1 - so it's not supported
 
         got = _get_payment_fields_for_v1(sig) if x402v == 1 else sig.get("accepted")
         if not expected or not got:

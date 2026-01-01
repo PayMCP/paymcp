@@ -8,6 +8,7 @@ from pydantic import Field
 from ...utils.context import get_ctx_from_server, capture_client_from_ctx
 from .elicitation import make_paid_wrapper as make_elicitation_wrapper
 from .resubmit import make_paid_wrapper as make_resubmit_wrapper
+from .x402 import make_paid_wrapper as make_x402_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,15 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         config=config,
     )
 
+    x402_wrapper = make_x402_wrapper(
+        func=func,
+        mcp=mcp,
+        providers=providers,
+        price_info=price_info,
+        state_store=state_store,
+        config=config,
+    )
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         ctx = kwargs.get("ctx", None)
@@ -55,7 +65,12 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         capabilities = client_info.get("capabilities") or {}
         logger.debug(f"[PayMCP Auto] Client capabilities: {capabilities}")
 
-        if capabilities.get("elicitation"):
+        if "x402" in capabilities:
+            kwargs.pop("payment_id", None)
+            logger.debug("[PayMCP Auto] Using x402 flow")
+            return await x402_wrapper(*args, **kwargs)
+
+        if "elicitation" in capabilities:
             # payment_id is only needed for resubmit; drop it to avoid leaking to tools that don't expect it
             kwargs.pop("payment_id", None)
             logger.debug("[PayMCP Auto] Using elicitation flow")

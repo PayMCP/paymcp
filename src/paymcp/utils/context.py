@@ -32,7 +32,7 @@ def capture_client_from_ctx(ctx):
     request_context = getattr(ctx, "request_context", None) if ctx is not None else None
     req = getattr(request_context, "request", None) if request_context is not None else None
     headers = getattr(req, "headers", None) if req is not None else None
-    session_id = headers.get("mcp-session-id")
+    session_id = headers.get("mcp-session-id") if headers else None
 
 
     return {
