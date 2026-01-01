@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from paymcp.payment.flows import x402 as x402_flow
 from paymcp.payment.flows.x402 import make_paid_wrapper
 
 
@@ -130,6 +131,50 @@ async def test_x402_accepts_meta_signature_and_executes_tool():
 
 
 @pytest.mark.asyncio
+async def test_x402_accepts_x_payment_header_and_executes_tool():
+    payment_data = {
+        "x402Version": 2,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "eip155:8453",
+                "asset": "USDC",
+                "payTo": "0xabc",
+                "extra": {"challengeId": "cid-123"},
+            }
+        ],
+    }
+    sig = _build_sig(payment_data)
+    sig_b64 = base64.b64encode(json.dumps(sig).encode("utf-8")).decode("utf-8")
+
+    provider = Mock()
+    provider.get_payment_status = Mock(return_value="paid")
+
+    state_store = AsyncMock()
+    state_store.get = AsyncMock(return_value={"args": {"paymentData": payment_data}})
+    state_store.delete = AsyncMock()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    headers = {"x-payment": sig_b64}
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest(headers)), session=DummySession())
+
+    wrapper = make_paid_wrapper(
+        func=tool,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=state_store,
+    )
+
+    result = await wrapper(ctx=ctx)
+    assert result == "ok"
+    state_store.delete.assert_called_once_with("cid-123")
+    provider.get_payment_status.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_x402_rejects_incorrect_signature():
     payment_data = {
         "x402Version": 2,
@@ -212,3 +257,77 @@ async def test_x402_payment_error_cleans_state():
     with pytest.raises(RuntimeError, match="Payment failed"):
         await wrapper(ctx=ctx)
     state_store.delete.assert_called_once_with("cid-123")
+
+
+@pytest.mark.asyncio
+async def test_x402_v1_sets_session_challenge_id(monkeypatch):
+    payment_data = {
+        "x402Version": 1,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "base",
+                "asset": "USDC",
+                "payTo": "0xabc",
+            }
+        ],
+    }
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("pid-123", "", payment_data))
+
+    state_store = AsyncMock()
+    state_store.set = AsyncMock()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    monkeypatch.setattr(x402_flow, "capture_client_from_ctx", lambda _ctx: {"sessionId": "sess-1"})
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+
+    wrapper = make_paid_wrapper(
+        func=tool,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=state_store,
+    )
+
+    result = await wrapper(ctx=ctx)
+    assert result["error"]["code"] == 402
+    state_store.set.assert_called_once_with("sess-1-tool", {"paymentData": payment_data})
+
+
+@pytest.mark.asyncio
+async def test_x402_v1_requires_session_id(monkeypatch):
+    payment_data = {
+        "x402Version": 1,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "base",
+                "asset": "USDC",
+                "payTo": "0xabc",
+            }
+        ],
+    }
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("pid-123", "", payment_data))
+
+    state_store = AsyncMock()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    monkeypatch.setattr(x402_flow, "capture_client_from_ctx", lambda _ctx: {"sessionId": None})
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+
+    wrapper = make_paid_wrapper(
+        func=tool,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=state_store,
+    )
+
+    with pytest.raises(RuntimeError, match="Session ID is not found"):
+        await wrapper(ctx=ctx)

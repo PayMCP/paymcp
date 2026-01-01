@@ -65,12 +65,12 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         capabilities = client_info.get("capabilities") or {}
         logger.debug(f"[PayMCP Auto] Client capabilities: {capabilities}")
 
-        if "x402" in capabilities:
+        if "x402" in capabilities and capabilities.get("x402") is not False:
             kwargs.pop("payment_id", None)
             logger.debug("[PayMCP Auto] Using x402 flow")
             return await x402_wrapper(*args, **kwargs)
 
-        if "elicitation" in capabilities:
+        if "elicitation" in capabilities and capabilities.get("elicitation") is not False:
             # payment_id is only needed for resubmit; drop it to avoid leaking to tools that don't expect it
             kwargs.pop("payment_id", None)
             logger.debug("[PayMCP Auto] Using elicitation flow")
