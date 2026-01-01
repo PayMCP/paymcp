@@ -208,7 +208,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         stored_args = stored.get("args") if stored else None
         payment_data = stored_args.get("paymentData") if isinstance(stored_args, dict) else None
         if not payment_data:
-            raise RuntimeError("Unknown challenge ID")
+            raise RuntimeError(f"Unknown challenge ID: {challenge_id}")
 
         x402v = sig.get("x402Version")
         network_str = sig.get("network") if x402v == 1 else sig.get("accepted", {}).get("network")

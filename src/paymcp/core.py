@@ -240,9 +240,6 @@ class PayMCP:
         wrapped._paymcp_list_tools_patched = True
         self.mcp._tool_manager.list_tools = wrapped
         logger.debug("[PayMCP] tools/list handler is patched for Mode.AUTO ")
-    
-    def get_client_info(self, session_id:str):
-        return {}
 
     def get_x402_middleware(self):
         return build_x402_middleware(self.providers, self.state_store, self.paidtools, self.payment_flow, logger);

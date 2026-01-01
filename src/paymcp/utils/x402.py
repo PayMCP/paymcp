@@ -39,6 +39,7 @@ def build_x402_middleware(
                     return await call_next(request)
 
                 session_id = request.headers.get("mcp-session-id") or ""
+
                 #client_info = await get_client_info(session_id)
 
                 #capabilities = (client_info or {}).get("capabilities") or {}
