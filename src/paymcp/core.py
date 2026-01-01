@@ -9,6 +9,7 @@ from .utils.context import capture_client_from_ctx
 from .utils.x402 import build_x402_middleware
 import logging
 import json
+import copy
 logger = logging.getLogger(__name__)
 
 try:
@@ -232,9 +233,16 @@ class PayMCP:
                 filtered = []
                 for tool in tools:
                     tool_name = tool_name_from(tool)
+
+                    # IMPORTANT: do not mutate tool definitions returned by `orig()`.
+                    # They may be cached/shared across requests, which would make the
+                    # stripping effectively global across clients.
+                    tool_copy = copy.deepcopy(tool)
+
                     if tool_name and tool_name in self.paidtools:
-                        strip_payment_id(tool)
-                    filtered.append(tool)
+                        strip_payment_id(tool_copy)
+
+                    filtered.append(tool_copy)
                 tools = filtered
             return tools
         wrapped._paymcp_list_tools_patched = True
