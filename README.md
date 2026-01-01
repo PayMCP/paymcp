@@ -2,6 +2,8 @@
 
 **Provider-agnostic payment layer for MCP (Model Context Protocol) tools and agents.**
 
+> 🆕 **x402 protocol is now fully supported.** PayMCP includes native support for the [x402 payment protocol](https://www.x402.org/) and a dedicated `Mode.X402` for clients capable of automatic on-chain payments.
+
 `paymcp` is a lightweight SDK that helps you add monetization to your MCP‑based tools, servers, or agents. It supports multiple payment providers and integrates seamlessly with MCP's tool/resource interface.
 
 See the [full documentation](https://paymcp.info).
@@ -12,7 +14,7 @@ See the [full documentation](https://paymcp.info).
 
 - ✅ Add `@price(...)` decorators to your MCP tools to enable pay‑per‑request billing.
 - ✅ Gate tools behind **active subscriptions** (where supported) with the `@subscription(...)` decorator; helper tools included.
-- 🔁 Pay‑per‑request flows support multiple **modes** (AUTO / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
+- 🔁 Pay‑per‑request flows support multiple **modes** (AUTO / X402 / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS).
 - 🔌 Built-in support for major providers ([see list](#supported-providers)) — plus a pluggable interface for custom providers.
 - ⚙️ Easy integration with `FastMCP` or other MCP servers
 
@@ -39,7 +41,7 @@ PayMCP(
     providers=[
         StripeProvider(api_key=os.getenv("STRIPE_API_KEY")),
     ],
-    mode=Mode.AUTO # optional, AUTO (default) / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
+    mode=Mode.AUTO # optional, AUTO (default) / X402 / TWO_STEP / RESUBMIT / ELICITATION / PROGRESS / DYNAMIC_TOOLS
 )
 
 ```
@@ -107,6 +109,8 @@ Built-in support is available for the following providers. You can also [write a
 - ✅ [PayPal](https://paypal.com) — pay‑per‑request
 - ✅ [Square](https://squareup.com) — pay‑per‑request
 - ✅ [Walleot](https://walleot.com/developers) — pay‑per‑request
+- ✅ **USDC‑x402 (Base)** — pay‑per‑request ([x402 protocol](https://www.x402.org/))
+- ✅ **USDC‑SPL‑x402 (Solana)** — pay‑per‑request ([x402 protocol](https://www.x402.org/))
 
 - 🔜 More providers welcome! Open an issue or PR.
 
@@ -166,6 +170,56 @@ The `mode` parameter controls how the user is guided through the pay‑per‑req
 - **`Mode.ELICITATION`** — Sends a payment link via MCP elicitation (if supported). After payment, the tool completes in the same call.
 - **`Mode.PROGRESS`** — Keeps the call open, streams progress while polling the provider, and returns automatically once paid.
 - **`Mode.DYNAMIC_TOOLS`** — Temporarily exposes additional tools (e.g., `confirm_payment_*`) to steer the client/LLM through the flow.
+- **`Mode.X402`** — Uses the [x402 protocol](https://www.x402.org/) for automatic on‑chain payments. Clients receive an MCP error with HTTP status `402 Payment Required` formatted per x402, and can auto‑pay and retry without user interaction.
+
+⚠️ **Important limitations**:
+
+- `Mode.X402` can be used **only if you are certain the MCP client supports automatic payments via x402**.
+- **Most major MCP clients do NOT currently support x402.**
+- If client support is uncertain, **use `Mode.AUTO` instead** — it will safely fall back to other compatible flows.
+
+**Supported assets (current x402 protocol):**
+- **USDC on Base**
+- **USDC on Solana** (often referred to as **USDC‑SPL**)
+
+To accept payments in `Mode.X402`, you **must** use the `X402Provider`.
+
+#### X402 Provider Configuration
+
+Minimal setup for accepting **USDC payments** using x402:
+
+```python
+import os
+from paymcp.providers import X402Provider
+
+provider = X402Provider(
+    pay_to=[{"address": "0xYourAddress"}],
+    facilitator={
+        "apiKeyId": os.getenv("CDP_API_KEY_ID"),
+        "apiKeySecret": os.getenv("CDP_API_KEY_SECRET"),
+    },
+)
+```
+
+> The mainnet facilitator requires a Coinbase Developer Platform (CDP) account.
+
+For **development and testing**, you can use the free public facilitator:
+
+```python
+provider = X402Provider(
+    pay_to=[{
+        "address": "0xYourAddress",
+        "network": "eip155:84532",  # Base Sepolia testnet
+    }],
+    facilitator={"url": "https://www.x402.org/facilitator"},
+)
+```
+
+`eip155:84532` is the **CAIP‑2 network identifier** for the Base Sepolia testnet.
+
+You can configure **multiple `pay_to` entries** to enable **multi‑network or multi‑asset acceptance** within the same provider instance.
+
+> ⚠️ **Note:** `Mode.X402` works only with MCP clients that explicitly support the x402 payment protocol. Since most existing clients do not, it is strongly recommended to use `Mode.AUTO` unless you fully control the client environment.
 
 
 ---

@@ -1,5 +1,12 @@
 # Changelog
 
+# 0.8.0
+### Added
+- Introduced `Mode.X402`.
+
+### Changed
+- In `AUTO` mode, the server now detects client support for `X402` and automatically selects `Mode.X402` when available.
+
 # 0.7.0
 ### Breaking Changes
 - Default `mode` is now `AUTO`.
