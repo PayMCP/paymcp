@@ -111,7 +111,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     """
     x402 RESUBMIT flow.
     """
-    provider = next(iter(providers.values()), None)
+    provider = providers.get("x402")
     if provider is None:
         raise RuntimeError("[PayMCP] No payment provider configured")
 

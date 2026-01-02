@@ -19,7 +19,10 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     2. A dynamically registered tool `confirm_<tool>` waits for payment,
        validates it, and only then calls the original function.
     """
-    provider = next(iter(providers.values()), None)
+    provider = next(
+        (v for k, v in providers.items() if k != "x402"),
+        None
+    )
     if provider is None:
         raise RuntimeError("[PayMCP] No payment provider configured")
 

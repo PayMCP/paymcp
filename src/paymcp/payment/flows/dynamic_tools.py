@@ -45,7 +45,10 @@ async def _send_notification(ctx):
 
 def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """Wrap tool: initiate payment -> hide tool -> register confirm tool."""
-    provider = next(iter(providers.values()), None)
+    provider = next(
+        (v for k, v in providers.items() if k != "x402"),
+        None
+    )
     if provider is None:
         raise RuntimeError("[PayMCP] No payment provider configured")
 
