@@ -49,7 +49,7 @@ class TestProgressFlow:
         # Provider returns 'paid' immediately
         mock_provider.get_payment_status.return_value = "paid"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         # Call wrapper with ctx
         result = await wrapper(test_arg="value", ctx=mock_ctx)
@@ -75,7 +75,7 @@ class TestProgressFlow:
         # First call returns 'pending', second returns 'paid'
         mock_provider.get_payment_status.side_effect = ["pending", "paid"]
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         result = await wrapper(ctx=mock_ctx)
 
@@ -94,7 +94,7 @@ class TestProgressFlow:
         """Test progress wrapper when payment fails."""
         mock_provider.get_payment_status.return_value = "failed"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         with pytest.raises(RuntimeError, match="Payment status is failed, expected 'paid'"):
             await wrapper(ctx=mock_ctx)
@@ -107,7 +107,7 @@ class TestProgressFlow:
         """Test progress wrapper when payment is canceled."""
         mock_provider.get_payment_status.return_value = "canceled"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         with pytest.raises(RuntimeError, match="Payment status is canceled, expected 'paid'"):
             await wrapper(ctx=mock_ctx)
@@ -120,7 +120,7 @@ class TestProgressFlow:
         """Test progress wrapper when payment expires."""
         mock_provider.get_payment_status.return_value = "expired"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         with pytest.raises(RuntimeError, match="Payment status is expired, expected 'paid'"):
             await wrapper(ctx=mock_ctx)
@@ -138,7 +138,7 @@ class TestProgressFlow:
         with patch('paymcp.payment.flows.progress.asyncio.sleep', new_callable=AsyncMock):
             with patch('paymcp.payment.flows.progress.MAX_WAIT_SECONDS', 6):  # Set short timeout
                 with patch('paymcp.payment.flows.progress.DEFAULT_POLL_SECONDS', 3):
-                    wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+                    wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
                     with pytest.raises(RuntimeError, match="Payment timeout reached; aborting"):
                         await wrapper(ctx=mock_ctx)
@@ -151,7 +151,7 @@ class TestProgressFlow:
         """Test progress wrapper without context (no progress reporting)."""
         mock_provider.get_payment_status.return_value = "paid"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         # Call without ctx parameter
         result = await wrapper(test_arg="value")
@@ -171,7 +171,7 @@ class TestProgressFlow:
         if hasattr(ctx_without_progress, 'report_progress'):
             delattr(ctx_without_progress, 'report_progress')
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         # This should not raise an error
         result = await wrapper(ctx=ctx_without_progress)
@@ -187,7 +187,7 @@ class TestProgressFlow:
         mock_provider.get_payment_status.return_value = "paid"
 
         state_store = InMemoryStateStore()
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store=state_store)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store=state_store)
 
         result = await wrapper(ctx=mock_ctx)
 
@@ -203,7 +203,7 @@ class TestProgressFlow:
         # Multiple pending statuses before paid
         mock_provider.get_payment_status.side_effect = ["pending", "pending", "pending", "paid"]
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         result = await wrapper(ctx=mock_ctx)
 
@@ -226,7 +226,7 @@ class TestProgressFlow:
             """Original function docstring."""
             return f"{arg1}-{arg2}"
 
-        wrapper = make_paid_wrapper(original_tool, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(original_tool, mock_mcp, {"mock": mock_provider}, price_info)
 
         # Verify metadata preserved by functools.wraps
         assert wrapper.__name__ == "original_tool"

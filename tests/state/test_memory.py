@@ -159,6 +159,19 @@ class TestInMemoryStateStore:
         assert len(successes) == 1
         assert len(failures) == 2
 
+    @pytest.mark.asyncio
+    async def test_sweeper_removes_expired_entries(self):
+        """Test that the background sweeper removes expired entries."""
+        import asyncio
+
+        store = InMemoryStateStore(ttl=1, sweep_interval=0.05)
+        await store.set("sweep_key", {"data": "value"}, ttl_seconds=0.05)
+
+        await asyncio.sleep(0.2)
+
+        assert "sweep_key" not in store._store
+        await store.close()
+
     # ===== Lock Tests =====
 
     @pytest.mark.asyncio

@@ -101,7 +101,7 @@ class TestCoreEdgeCases:
         make_paid_wrapper(
             func=mock_func,
             mcp=mock_mcp_instance,
-            provider=mock_provider,
+            providers={"mock": mock_provider},
             price_info=price_info,
             state_store=mock_state_store,
             config=config
@@ -155,7 +155,7 @@ class TestCoreEdgeCases:
         wrapper = paymcp._wrapper_factory(
             func=original_func,
             mcp=mock_mcp_instance,
-            provider=mock_provider,
+            providers={"mock": mock_provider},
             price_info={"price": 0.50, "currency": "USD"},
             state_store=mock_state_store
         )

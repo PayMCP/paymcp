@@ -52,7 +52,7 @@ class TestTwoStepFlowCoverage:
         make_paid_wrapper(
             func=mock_func,
             mcp=mock_mcp,
-            provider=mock_provider,
+            providers={"mock": mock_provider},
             price_info=price_info,
             state_store=mock_state_store,
             config=config
@@ -84,7 +84,7 @@ class TestTwoStepFlowCoverage:
         make_paid_wrapper(
             func=mock_func,
             mcp=mock_mcp,
-            provider=mock_provider,
+            providers={"mock": mock_provider},
             price_info=price_info,
             state_store=mock_state_store,
             config=config
@@ -110,7 +110,7 @@ class TestTwoStepFlowCoverage:
         make_paid_wrapper(
             func=mock_func,
             mcp=mock_mcp,
-            provider=mock_provider,
+            providers={"mock": mock_provider},
             price_info=price_info,
             state_store=mock_state_store,
             config=None  # Explicitly None
@@ -139,7 +139,7 @@ class TestTwoStepFlowCoverage:
         make_paid_wrapper(
             func=mock_func,
             mcp=mock_mcp,
-            provider=mock_provider,
+            providers={"mock": mock_provider},
             price_info=price_info,
             state_store=mock_state_store,
             config=config

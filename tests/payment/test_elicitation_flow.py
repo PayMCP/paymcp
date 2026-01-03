@@ -55,7 +55,7 @@ class TestElicitationFlow:
 
             mock_elicitation.return_value = "paid"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify payment was created
@@ -80,7 +80,7 @@ class TestElicitationFlow:
             mock_elicitation.return_value = "paid"
             mock_open_link.return_value = "Open payment link"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify open link message was used
@@ -96,7 +96,7 @@ class TestElicitationFlow:
 
             mock_elicitation.return_value = "canceled"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify function was not called and proper response returned
@@ -115,7 +115,7 @@ class TestElicitationFlow:
 
             mock_elicitation.return_value = "pending"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
             result = await wrapper(ctx=mock_ctx)
 
             # Verify function was not called and proper response returned
@@ -136,7 +136,7 @@ class TestElicitationFlow:
 
             mock_elicitation.side_effect = RuntimeError("Elicitation failed")
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
 
             with pytest.raises(RuntimeError, match="Elicitation failed"):
                 await wrapper(ctx=mock_ctx)
@@ -155,7 +155,7 @@ class TestElicitationFlow:
             mock_elicitation.return_value = "paid"
             mock_open_link.return_value = "Open payment link"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
             await wrapper(ctx=mock_ctx)
 
             # Verify link message was used
@@ -170,7 +170,7 @@ class TestElicitationFlow:
 
             mock_elicitation.return_value = "paid"
 
-            wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info, state_store)
+            wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store)
             result = await wrapper()
 
             # Verify elicitation was called with None context
@@ -186,7 +186,7 @@ class TestElicitationFlow:
         mock_func.__doc__ = "Original docstring"
         mock_func.__name__ = "original_name"
 
-        wrapper = make_paid_wrapper(mock_func, mock_mcp, mock_provider, price_info)
+        wrapper = make_paid_wrapper(mock_func, mock_mcp, {"mock": mock_provider}, price_info)
 
         assert wrapper.__name__ == "original_name"
         assert wrapper.__doc__ == "Original docstring"

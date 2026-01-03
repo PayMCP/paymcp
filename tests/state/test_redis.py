@@ -86,6 +86,14 @@ class TestRedisStateStore:
         assert call_args[1] == 7200
 
     @pytest.mark.asyncio
+    async def test_set_with_override_ttl_seconds(self, store, mock_redis):
+        """Test setting a value with per-call TTL override."""
+        await store.set("test_key", {"data": "value"}, ttl_seconds=15)
+
+        call_args = mock_redis.setex.call_args[0]
+        assert call_args[1] == 15
+
+    @pytest.mark.asyncio
     async def test_get_existing_key(self, store, mock_redis):
         """Test getting an existing key from Redis."""
         stored_data = json.dumps({

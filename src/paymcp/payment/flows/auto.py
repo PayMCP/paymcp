@@ -8,19 +8,24 @@ from pydantic import Field
 from ...utils.context import get_ctx_from_server, capture_client_from_ctx
 from .elicitation import make_paid_wrapper as make_elicitation_wrapper
 from .resubmit import make_paid_wrapper as make_resubmit_wrapper
+from .x402 import make_paid_wrapper as make_x402_wrapper
 
 logger = logging.getLogger(__name__)
 
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Auto-select payment flow based on client capabilities.
     If the client supports elicitation, use the elicitation flow; otherwise, fall back to resubmit.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
+
     resubmit_wrapper = make_resubmit_wrapper(
         func=func,
         mcp=mcp,
-        provider=provider,
+        providers=providers,
         price_info=price_info,
         state_store=state_store,
         config=config,
@@ -28,7 +33,16 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
     elicitation_wrapper = make_elicitation_wrapper(
         func=func,
         mcp=mcp,
-        provider=provider,
+        providers=providers,
+        price_info=price_info,
+        state_store=state_store,
+        config=config,
+    )
+
+    x402_wrapper = make_x402_wrapper(
+        func=func,
+        mcp=mcp,
+        providers=providers,
         price_info=price_info,
         state_store=state_store,
         config=config,
@@ -45,11 +59,18 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
             except Exception:
                 ctx = None
 
+        logger.debug("[PayMCP] tool call ctx ] %s", ctx)
+
         client_info = capture_client_from_ctx(ctx)
         capabilities = client_info.get("capabilities") or {}
         logger.debug(f"[PayMCP Auto] Client capabilities: {capabilities}")
 
-        if capabilities.get("elicitation"):
+        if "x402" in capabilities and capabilities.get("x402") is not False:
+            kwargs.pop("payment_id", None)
+            logger.debug("[PayMCP Auto] Using x402 flow")
+            return await x402_wrapper(*args, **kwargs)
+
+        if "elicitation" in capabilities and capabilities.get("elicitation") is not False:
             # payment_id is only needed for resubmit; drop it to avoid leaking to tools that don't expect it
             kwargs.pop("payment_id", None)
             logger.debug("[PayMCP Auto] Using elicitation flow")

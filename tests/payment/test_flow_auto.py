@@ -28,15 +28,18 @@ def _async_return(value):
     return _fn
 
 
-def _make_wrappers(monkeypatch, elicitation_fn=None, resubmit_fn=None):
+def _make_wrappers(monkeypatch, elicitation_fn=None, resubmit_fn=None, x402_fn=None):
     """Helper to set up mock wrappers."""
     if elicitation_fn is None:
         elicitation_fn = _async_return("elicitation")
     if resubmit_fn is None:
         resubmit_fn = _async_return("resubmit")
+    if x402_fn is None:
+        x402_fn = _async_return("x402")
 
     monkeypatch.setattr(auto, "make_elicitation_wrapper", lambda **_: elicitation_fn)
     monkeypatch.setattr(auto, "make_resubmit_wrapper", lambda **_: resubmit_fn)
+    monkeypatch.setattr(auto, "make_x402_wrapper", lambda **_: x402_fn)
 
 
 @pytest.mark.asyncio
@@ -57,6 +60,7 @@ async def test_auto_uses_elicitation_when_capable(monkeypatch):
 
     monkeypatch.setattr(auto, "make_elicitation_wrapper", fake_elicitation_wrapper)
     monkeypatch.setattr(auto, "make_resubmit_wrapper", fake_resubmit_wrapper)
+    monkeypatch.setattr(auto, "make_x402_wrapper", lambda **_: _async_return("x402"))
 
     async def dummy_tool(**_kwargs):
         return "tool"
@@ -65,7 +69,7 @@ async def test_auto_uses_elicitation_when_capable(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
         state_store=object(),
         config=None,
@@ -99,6 +103,7 @@ async def test_auto_falls_back_to_resubmit(monkeypatch):
 
     monkeypatch.setattr(auto, "make_elicitation_wrapper", fake_elicitation_wrapper)
     monkeypatch.setattr(auto, "make_resubmit_wrapper", fake_resubmit_wrapper)
+    monkeypatch.setattr(auto, "make_x402_wrapper", lambda **_: _async_return("x402"))
 
     async def dummy_tool(**_kwargs):
         return "tool"
@@ -107,7 +112,7 @@ async def test_auto_falls_back_to_resubmit(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
         state_store=object(),
         config=None,
@@ -121,6 +126,49 @@ async def test_auto_falls_back_to_resubmit(monkeypatch):
 # =============================================================================
 # Context Retrieval Tests
 # =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_auto_uses_x402_when_capable(monkeypatch):
+    called = {}
+
+    async def fake_x402(*_args, **kwargs):
+        called["kwargs"] = kwargs
+        return "x402"
+
+    def fake_x402_wrapper(**_kwargs):
+        return fake_x402
+
+    def fake_elicitation_wrapper(**_kwargs):
+        async def _elicitation(*_a, **_k):
+            return "elicitation"
+        return _elicitation
+
+    def fake_resubmit_wrapper(**_kwargs):
+        async def _resubmit(*_a, **_k):
+            return "resubmit"
+        return _resubmit
+
+    monkeypatch.setattr(auto, "make_x402_wrapper", fake_x402_wrapper)
+    monkeypatch.setattr(auto, "make_elicitation_wrapper", fake_elicitation_wrapper)
+    monkeypatch.setattr(auto, "make_resubmit_wrapper", fake_resubmit_wrapper)
+
+    async def dummy_tool(**_kwargs):
+        return "tool"
+
+    ctx = _make_ctx({"x402": True, "elicitation": True})
+    wrapper = auto.make_paid_wrapper(
+        func=dummy_tool,
+        mcp=object(),
+        providers={"mock": object()},
+        price_info={"price": 1, "currency": "USD"},
+        state_store=object(),
+        config=None,
+    )
+
+    result = await wrapper(ctx=ctx, payment_id="pid123")
+    assert result == "x402"
+    assert "payment_id" not in called["kwargs"]
 
 
 @pytest.mark.asyncio
@@ -142,7 +190,7 @@ async def test_auto_retrieves_ctx_from_mcp_when_not_in_kwargs(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -167,7 +215,7 @@ async def test_auto_handles_get_ctx_exception_gracefully(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -195,7 +243,7 @@ async def test_auto_ctx_injected_into_kwargs_when_retrieved(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -220,7 +268,7 @@ async def test_auto_falls_back_to_resubmit_when_ctx_is_none(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -239,7 +287,7 @@ async def test_auto_falls_back_when_mcp_is_none(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=None,  # mcp is None
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -264,7 +312,7 @@ async def test_auto_handles_capabilities_none(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -284,7 +332,7 @@ async def test_auto_handles_elicitation_false(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -304,7 +352,7 @@ async def test_auto_handles_other_capabilities_without_elicitation(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -327,7 +375,7 @@ def test_signature_with_var_keyword_params(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=tool_with_kwargs,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -346,7 +394,7 @@ def test_signature_without_var_keyword_params(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=tool_without_kwargs,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -364,7 +412,7 @@ def test_signature_preserves_parameter_defaults(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=tool_with_defaults,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -404,7 +452,7 @@ def test_signature_inspection_failure_handled_gracefully(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=bad_func,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -436,7 +484,7 @@ async def test_auto_passes_positional_args_correctly(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -462,7 +510,7 @@ async def test_auto_passes_kwargs_correctly(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -499,7 +547,7 @@ async def test_auto_same_wrapper_routes_differently_per_call(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -520,8 +568,9 @@ async def test_auto_same_wrapper_routes_differently_per_call(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auto_payment_id_stripped_only_for_elicitation(monkeypatch):
-    """Test that payment_id is stripped for elicitation but kept for resubmit."""
+    """Test that payment_id is stripped for x402/elicitation but kept for resubmit."""
     elicitation_received = {}
+    x402_received = {}
     resubmit_received = {}
 
     async def capture_elicitation(*args, **kwargs):
@@ -532,7 +581,16 @@ async def test_auto_payment_id_stripped_only_for_elicitation(monkeypatch):
         resubmit_received.update(kwargs)
         return "resubmit"
 
-    _make_wrappers(monkeypatch, elicitation_fn=capture_elicitation, resubmit_fn=capture_resubmit)
+    async def capture_x402(*args, **kwargs):
+        x402_received.update(kwargs)
+        return "x402"
+
+    _make_wrappers(
+        monkeypatch,
+        elicitation_fn=capture_elicitation,
+        resubmit_fn=capture_resubmit,
+        x402_fn=capture_x402,
+    )
 
     async def dummy_tool(**_kwargs):
         return "tool"
@@ -540,7 +598,7 @@ async def test_auto_payment_id_stripped_only_for_elicitation(monkeypatch):
     wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=object(),
-        provider=object(),
+        providers={"mock": object()},
         price_info={"price": 1, "currency": "USD"},
     )
 
@@ -548,6 +606,11 @@ async def test_auto_payment_id_stripped_only_for_elicitation(monkeypatch):
     ctx_elicitation = _make_ctx({"elicitation": True})
     await wrapper(ctx=ctx_elicitation, payment_id="pid123")
     assert "payment_id" not in elicitation_received
+
+    # Call with x402 - payment_id should be stripped
+    ctx_x402 = _make_ctx({"x402": True})
+    await wrapper(ctx=ctx_x402, payment_id="pid789")
+    assert "payment_id" not in x402_received
 
     # Call without elicitation - payment_id should be kept
     ctx_resubmit = _make_ctx({})
@@ -572,8 +635,13 @@ def test_wrapper_receives_all_parameters(monkeypatch):
         received_params["resubmit"] = kwargs
         return _async_return("resubmit")
 
+    def capture_x402_factory(**kwargs):
+        received_params["x402"] = kwargs
+        return _async_return("x402")
+
     monkeypatch.setattr(auto, "make_elicitation_wrapper", capture_elicitation_factory)
     monkeypatch.setattr(auto, "make_resubmit_wrapper", capture_resubmit_factory)
+    monkeypatch.setattr(auto, "make_x402_wrapper", capture_x402_factory)
 
     async def dummy_tool():
         return "tool"
@@ -587,18 +655,18 @@ def test_wrapper_receives_all_parameters(monkeypatch):
     auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=mock_mcp,
-        provider=mock_provider,
+        providers={"mock": mock_provider},
         price_info=price_info,
         state_store=mock_state_store,
         config=mock_config,
     )
 
-    # Both factories should receive all parameters
-    for flow_type in ["elicitation", "resubmit"]:
+    # All factories should receive all parameters
+    for flow_type in ["elicitation", "resubmit", "x402"]:
         params = received_params[flow_type]
         assert params["func"] is dummy_tool
         assert params["mcp"] is mock_mcp
-        assert params["provider"] is mock_provider
+        assert params["providers"] == {"mock": mock_provider}
         assert params["price_info"] is price_info
         assert params["state_store"] is mock_state_store
         assert params["config"] is mock_config

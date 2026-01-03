@@ -342,7 +342,7 @@ async def ensure_subscription_allowed(
 def make_subscription_wrapper(
     func: Callable[..., Awaitable[Any]],
     mcp: Any,
-    provider: Any,
+    providers: Any,
     subscription_info: Any,
     tool_name: str,
     state_store: Any = None,  # currently unused, for signature compatibility
@@ -357,6 +357,10 @@ def make_subscription_wrapper(
       - original positional/keyword arguments
       - a context object passed as the `ctx` keyword argument
     """
+
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured for subscription tools")
 
     log: logging.Logger = custom_logger or getattr(provider, "logger", logger)
 
@@ -451,7 +455,7 @@ class CancelSubscriptionInput(BaseModel):
 
 def register_subscription_tools(
     server: Any,
-    provider: Any,
+    providers: Any,
     logger: Optional[logging.Logger] = None,
 ):
     """
@@ -460,6 +464,10 @@ def register_subscription_tools(
       - start_subscription
       - cancel_subscription
     """
+
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured for subscription tools")
 
     srv = server
     log: logging.Logger = logger or getattr(provider, "logger", logging.getLogger(__name__))

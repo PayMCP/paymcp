@@ -220,7 +220,7 @@ async def test_make_paid_wrapper_with_meta_in_config():
     price_info = {"price": 1.0, "currency": "USD"}
     config = {"meta": {"test_key": "test_value"}}
 
-    wrapper = make_paid_wrapper(test_func, mock_mcp, mock_provider, price_info, config=config)
+    wrapper = make_paid_wrapper(test_func, mock_mcp, {"mock": mock_provider}, price_info, config=config)
 
     # Create mock context with session
     mock_ctx = Mock()

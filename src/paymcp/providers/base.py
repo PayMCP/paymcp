@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, Optional, Any
 import logging
 import requests
 
@@ -46,9 +46,9 @@ class BasePaymentProvider(ABC):
     @abstractmethod
     def create_payment(
         self, amount: float, currency: str, description: str
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, Optional[Any]]:
         """
-        Return (payment_id, payment_url) that the user should visit.
+        Return (payment_id, payment_url[, payment_data]) that the user should visit.
         """
 
     @abstractmethod

@@ -6,6 +6,7 @@ from inspect import Parameter
 from typing import Annotated, Optional
 from pydantic import Field
 from ...utils.context import get_ctx_from_server
+from .state_utils import sanitize_state_args
 from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
@@ -52,13 +53,16 @@ def _create_payment_error(
 
     return err
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Resubmit payment flow .
 
     Note: state_store parameter is accepted for signature consistency
     but not used by RESUBMIT flow.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
 
 
     @functools.wraps(func)
@@ -88,14 +92,14 @@ def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=
         if not existed_payment_id:
             # Create payment session
             logger.debug(f"[PayMCP:Resubmit] creating payment for {price_info}")
-            payment_id, payment_url = provider.create_payment(
+            payment_id, payment_url, *_ = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee"
             )
 
             pid_str = str(payment_id)
-            await state_store.set(pid_str, kwargs)
+            await state_store.set(pid_str, sanitize_state_args(kwargs))
 
             logger.debug(f"[PayMCP:Resubmit] created payment id={pid_str} url={payment_url}")
 

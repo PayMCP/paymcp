@@ -29,8 +29,14 @@ def capture_client_from_ctx(ctx):
     client_info = getattr(client_params, "clientInfo", None)
     capabilities = getattr(client_params, "capabilities", None)
 
+    request_context = getattr(ctx, "request_context", None) if ctx is not None else None
+    req = getattr(request_context, "request", None) if request_context is not None else None
+    headers = getattr(req, "headers", None) if req is not None else None
+    session_id = headers.get("mcp-session-id") if headers else None
+
+
     return {
         "name": getattr(client_info, "name", None) or "unknown",
         "capabilities": capabilities.model_dump() if capabilities else {},
-        "sessionId": str(id(session))
+        "sessionId": session_id or str(id(session))
     }

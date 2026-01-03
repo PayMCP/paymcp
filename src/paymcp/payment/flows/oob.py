@@ -9,13 +9,17 @@ from ...utils.elicitation import run_elicitation_loop
 
 logger = logging.getLogger(__name__)
 
-def make_paid_wrapper(func, mcp, provider, price_info, state_store=None, config=None):
+def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
     """
     Out-of-band payment flow (not yet implemented).
 
     Note: state_store parameter is accepted for signature consistency
     but not used by OOB flow.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         #ctx = kwargs.get("ctx", None)

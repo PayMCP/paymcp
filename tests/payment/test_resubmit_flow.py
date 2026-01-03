@@ -59,7 +59,7 @@ class TestResubmitFlow:
     ):
         """Test payment initiation when no payment_id is provided."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         with pytest.raises(RuntimeError) as exc_info:
@@ -83,7 +83,7 @@ class TestResubmitFlow:
     ):
         """Test that payment initiation stores all kwargs in state."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         with pytest.raises(RuntimeError):
@@ -95,6 +95,23 @@ class TestResubmitFlow:
         assert stored["args"]["arg3"] == {"nested": "data"}
         assert "ts" in stored
 
+    @pytest.mark.asyncio
+    async def test_payment_initiation_drops_ctx_from_state(
+        self, mock_func, mock_mcp, mock_provider, price_info, state_store
+    ):
+        """Ensure ctx is not persisted to state."""
+        wrapper = make_paid_wrapper(
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
+        )
+
+        fake_ctx = object()
+        with pytest.raises(RuntimeError):
+            await wrapper(ctx=fake_ctx, test_arg="value")
+
+        stored = await state_store.get("payment_123")
+        assert "ctx" not in stored["args"]
+        assert stored["args"]["test_arg"] == "value"
+
     # ===== Payment Confirmation Tests =====
 
     @pytest.mark.asyncio
@@ -103,7 +120,7 @@ class TestResubmitFlow:
     ):
         """Test successful payment confirmation and tool execution."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         # Setup: Store state
@@ -129,7 +146,7 @@ class TestResubmitFlow:
     ):
         """Test payment_id passed as top-level keyword argument."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_456", {"arg": "value"})
@@ -146,7 +163,7 @@ class TestResubmitFlow:
     ):
         """Test payment_id passed nested in args dict."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_789", {"data": "test"})
@@ -166,7 +183,7 @@ class TestResubmitFlow:
     ):
         """Test handling of pending payment status."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -193,7 +210,7 @@ class TestResubmitFlow:
     ):
         """Test handling of canceled payment status."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -217,7 +234,7 @@ class TestResubmitFlow:
     ):
         """Test handling of failed payment status."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -239,7 +256,7 @@ class TestResubmitFlow:
     ):
         """Test handling of unrecognized payment status."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -263,7 +280,7 @@ class TestResubmitFlow:
     ):
         """Test that payment status check is case-insensitive."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -287,7 +304,7 @@ class TestResubmitFlow:
     ):
         """Test error when payment_id doesn't exist in state."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         with pytest.raises(RuntimeError) as exc_info:
@@ -306,7 +323,7 @@ class TestResubmitFlow:
     ):
         """Test that payment_id cannot be reused after successful execution."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -332,7 +349,7 @@ class TestResubmitFlow:
     ):
         """Test ENG-214: If tool fails, state is NOT deleted (user can retry)."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -357,7 +374,7 @@ class TestResubmitFlow:
     ):
         """Test ENG-214: User can retry after tool execution failure."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -386,7 +403,7 @@ class TestResubmitFlow:
     ):
         """Test ENG-215: Race condition prevention with concurrent requests."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_race", {"arg": "value"})
@@ -425,7 +442,7 @@ class TestResubmitFlow:
     ):
         """Test that sequential attempts after first success are rejected."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_seq", {"arg": "value"})
@@ -449,7 +466,7 @@ class TestResubmitFlow:
     ):
         """Test that locks are properly acquired and released."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_lock", {"arg": "value"})
@@ -468,7 +485,7 @@ class TestResubmitFlow:
     ):
         """Test that locks are released even when exceptions occur."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_exc", {"arg": "value"})
@@ -487,7 +504,7 @@ class TestResubmitFlow:
     ):
         """Test that different payment_ids can be processed concurrently."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         # Setup two different payments
@@ -519,7 +536,7 @@ class TestResubmitFlow:
     ):
         """Test that result is returned without modification."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -542,7 +559,7 @@ class TestResubmitFlow:
     ):
         """Test immutable results are returned directly."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         await state_store.set("payment_123", {"arg": "value"})
@@ -564,7 +581,7 @@ class TestResubmitFlow:
     ):
         """Test that top-level payment_id takes priority over nested."""
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         # Setup two different payment states
@@ -592,7 +609,7 @@ class TestResubmitFlow:
         async def my_tool(data: str):
             return {"result": "success"}
 
-        wrapper = make_paid_wrapper(my_tool, None, mock_provider, {"price": 1.0, "currency": "USD"}, state_store)
+        wrapper = make_paid_wrapper(my_tool, None, {"mock": mock_provider}, {"price": 1.0, "currency": "USD"}, state_store)
 
         # Create payment first
         with pytest.raises(RuntimeError) as exc_info:

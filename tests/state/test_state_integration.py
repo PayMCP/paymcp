@@ -53,7 +53,7 @@ class TestStateStorageIntegration:
 
         # Create wrapper
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         # When: Initiate payment
@@ -87,7 +87,7 @@ class TestStateStorageIntegration:
 
         # Create wrapper
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         # When: Initiate payment
@@ -127,7 +127,7 @@ class TestStateStorageIntegration:
 
         # When: Create wrapper
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
 
         # Then: Should work without errors
@@ -145,10 +145,10 @@ class TestStateStorageIntegration:
 
         # Create two wrappers with different state stores
         wrapper_1 = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store_1
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store_1
         )
         wrapper_2 = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store_2
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store_2
         )
 
         # When: Initiate payments in both
@@ -186,7 +186,7 @@ class TestStateStorageIntegration:
 
         # Create wrapper and initiate payment
         wrapper = make_paid_wrapper(
-            mock_func, mock_mcp, mock_provider, price_info, state_store
+            mock_func, mock_mcp, {"mock": mock_provider}, price_info, state_store
         )
         await wrapper(cleanup_test="value")
 

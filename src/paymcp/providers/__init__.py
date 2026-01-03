@@ -5,6 +5,7 @@ from .paypal import PayPalProvider
 from .square import SquareProvider
 from .coinbase import CoinbaseProvider
 from .mock import MockPaymentProvider
+from .x402 import X402Provider
 from .base import BasePaymentProvider
 
 __all__ = [
@@ -15,10 +16,12 @@ __all__ = [
     "SquareProvider",
     "CoinbaseProvider",
     "MockPaymentProvider",
+    "X402Provider",
 ]
 
 from typing import Any, Iterable, Mapping, Type, Dict, Optional
 import importlib
+import re
 
 PROVIDER_MAP = {
     "stripe": StripeProvider,
@@ -27,7 +30,8 @@ PROVIDER_MAP = {
     "adyen": AdyenProvider,
     "square": SquareProvider,
     "coinbase": CoinbaseProvider,
-    "mock": MockPaymentProvider
+    "mock": MockPaymentProvider,
+    "x402": X402Provider,
 }
 
 
@@ -56,9 +60,25 @@ def _resolve_class(path: str) -> Type:
 def _key_for_instance(inst: Any, fallback: Optional[str] = None) -> str:
     """
     Derive a key for the instance from its attributes or fallback.
+
+    Normalization rules:
+    - lower-case
+    - if the key is derived from the class name (e.g. StripeProvider), strip a trailing 'provider'
+    - also strip a trailing 'provider' from slug/name if the user included it
     """
-    name = getattr(inst, "slug", None) or getattr(inst, "name", None) or fallback or inst.__class__.__name__
-    return str(name).lower()
+    raw_name = (
+        getattr(inst, "slug", None)
+        or getattr(inst, "name", None)
+        or fallback
+        or inst.__class__.__name__
+    )
+
+    key = str(raw_name).strip().lower()
+
+    # When iterable of instances is passed, we commonly derive the key from ClassName.
+    # To make keys nicer, drop a trailing 'provider' (e.g. 'stripeprovider' -> 'stripe').
+    key_no_provider = re.sub(r"provider$", "", key, flags=re.IGNORECASE).strip("-_ ")
+    return key_no_provider or key
 
 def build_providers(config_or_instances: Any):
     """

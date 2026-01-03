@@ -13,7 +13,7 @@ MAX_WAIT_SECONDS = 15 * 60        # give up after 15 min
 def make_paid_wrapper(
     func,
     mcp,
-    provider,
+    providers,
     price_info,
     state_store=None,
     config=None
@@ -26,6 +26,9 @@ def make_paid_wrapper(
     (func+session_id) so reconnects reuse an existing payment instead
     of creating a new one.
     """
+    provider = next(iter(providers.values()), None)
+    if provider is None:
+        raise RuntimeError("[PayMCP] No payment provider configured")
 
     @functools.wraps(func)
     async def _progress_wrapper(*args, **kwargs):
@@ -75,7 +78,7 @@ def make_paid_wrapper(
 
         # No stored payment -> create new one
         if payment_id is None or payment_url is None:
-            payment_id, payment_url = provider.create_payment(
+            payment_id, payment_url, *_ = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
                 description=f"{func.__name__}() execution fee"

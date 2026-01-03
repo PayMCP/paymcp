@@ -8,5 +8,6 @@ class Mode(str, Enum):
     OOB = "oob"
     DYNAMIC_TOOLS = "dynamic_tools" 
     RESUBMIT = "resubmit"
+    X402 = "x402"
 
 PaymentFlow = Mode # Alias for backward compatibility; PaymentFlow will be deprecated in future versions
