@@ -15,7 +15,10 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
     Note: state_store is required to resume a payment after reconnects.
     """
-    provider = next(iter(providers.values()), None)
+    provider = next(
+        (v for k, v in providers.items() if k != "x402"),
+        None
+    )
     if provider is None:
         raise RuntimeError("[PayMCP] No payment provider configured")
 

@@ -26,7 +26,10 @@ def make_paid_wrapper(
     (func+session_id) so reconnects reuse an existing payment instead
     of creating a new one.
     """
-    provider = next(iter(providers.values()), None)
+    provider = next(
+        (v for k, v in providers.items() if k != "x402"),
+        None
+    )
     if provider is None:
         raise RuntimeError("[PayMCP] No payment provider configured")
 
