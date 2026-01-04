@@ -1,5 +1,9 @@
 # Changelog
 
+# 0.8.1
+### Added
+- Mode.AUTO now supports configuring both a traditional provider and an X402 provider, automatically selecting X402 when the client has an X402 wallet.
+
 # 0.8.0
 ### Added
 - Introduced `Mode.X402`.
