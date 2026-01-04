@@ -623,7 +623,8 @@ async def test_auto_payment_id_stripped_only_for_elicitation(monkeypatch):
 # =============================================================================
 
 
-def test_wrapper_receives_all_parameters(monkeypatch):
+@pytest.mark.asyncio
+async def test_wrapper_receives_all_parameters(monkeypatch):
     """Test that wrapper factories receive all parameters."""
     received_params = {}
 
@@ -652,7 +653,7 @@ def test_wrapper_receives_all_parameters(monkeypatch):
     mock_config = {"key": "value"}
     price_info = {"price": 1, "currency": "USD"}
 
-    auto.make_paid_wrapper(
+    wrapper = auto.make_paid_wrapper(
         func=dummy_tool,
         mcp=mock_mcp,
         providers={"mock": mock_provider},
@@ -660,6 +661,10 @@ def test_wrapper_receives_all_parameters(monkeypatch):
         state_store=mock_state_store,
         config=mock_config,
     )
+
+    await wrapper(ctx=_make_ctx({"x402": True}))
+    await wrapper(ctx=_make_ctx({"elicitation": True}))
+    await wrapper(ctx=_make_ctx({}))
 
     # All factories should receive all parameters
     for flow_type in ["elicitation", "resubmit", "x402"]:

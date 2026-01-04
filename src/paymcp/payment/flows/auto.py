@@ -22,31 +22,48 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     if provider is None:
         raise RuntimeError("[PayMCP] No payment provider configured")
 
-    resubmit_wrapper = make_resubmit_wrapper(
-        func=func,
-        mcp=mcp,
-        providers=providers,
-        price_info=price_info,
-        state_store=state_store,
-        config=config,
-    )
-    elicitation_wrapper = make_elicitation_wrapper(
-        func=func,
-        mcp=mcp,
-        providers=providers,
-        price_info=price_info,
-        state_store=state_store,
-        config=config,
-    )
+    resubmit_wrapper = None
+    elicitation_wrapper = None
+    x402_wrapper = None
 
-    x402_wrapper = make_x402_wrapper(
-        func=func,
-        mcp=mcp,
-        providers=providers,
-        price_info=price_info,
-        state_store=state_store,
-        config=config,
-    )
+    def get_resubmit_wrapper():
+        nonlocal resubmit_wrapper
+        if resubmit_wrapper is None:
+            resubmit_wrapper = make_resubmit_wrapper(
+                func=func,
+                mcp=mcp,
+                providers=providers,
+                price_info=price_info,
+                state_store=state_store,
+                config=config,
+            )
+        return resubmit_wrapper
+
+    def get_elicitation_wrapper():
+        nonlocal elicitation_wrapper
+        if elicitation_wrapper is None:
+            elicitation_wrapper = make_elicitation_wrapper(
+                func=func,
+                mcp=mcp,
+                providers=providers,
+                price_info=price_info,
+                state_store=state_store,
+                config=config,
+            )
+        return elicitation_wrapper
+
+    def get_x402_wrapper():
+        nonlocal x402_wrapper
+        if x402_wrapper is None:
+            x402_wrapper = make_x402_wrapper(
+                func=func,
+                mcp=mcp,
+                providers=providers,
+                price_info=price_info,
+                state_store=state_store,
+                config=config,
+            )
+        return x402_wrapper
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
@@ -68,16 +85,16 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         if "x402" in capabilities and capabilities.get("x402") is not False:
             kwargs.pop("payment_id", None)
             logger.debug("[PayMCP Auto] Using x402 flow")
-            return await x402_wrapper(*args, **kwargs)
+            return await get_x402_wrapper()(*args, **kwargs)
 
         if "elicitation" in capabilities and capabilities.get("elicitation") is not False:
             # payment_id is only needed for resubmit; drop it to avoid leaking to tools that don't expect it
             kwargs.pop("payment_id", None)
             logger.debug("[PayMCP Auto] Using elicitation flow")
-            return await elicitation_wrapper(*args, **kwargs)
+            return await get_elicitation_wrapper()(*args, **kwargs)
 
         logger.debug("[PayMCP Auto] Using resubmit flow")
-        return await resubmit_wrapper(*args, **kwargs)
+        return await get_resubmit_wrapper()(*args, **kwargs)
 
     payment_param = Parameter(
         "payment_id",
