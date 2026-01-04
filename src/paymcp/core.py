@@ -106,7 +106,7 @@ class PayMCP:
                 elif price_info:
                     # --- Create payment using provider ---
                     kwargs["description"] = kwargs.get("description") or func.__doc__ or ""
-                    # Deferred payment creation, so do not call provider.create_payment here UPDATE: don't need this anymore - moving price info to meta
+                    # don't need this anymore - moving price info to meta
                     """
                     kwargs["description"] = description_with_price(
                         kwargs.get("description") or func.__doc__ or "",
