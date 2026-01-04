@@ -72,8 +72,9 @@ class PayMCP:
         original_tool = self.mcp.tool
         def patched_tool(*args, **kwargs):
             def wrapper(func):
-                price_info = getattr(func, "_paymcp_price_info", None)
-                subscription_info = getattr(func, "_paymcp_subscription_info", None)
+                meta = kwargs.get("meta") or {}
+                price_info = getattr(func, "_paymcp_price_info", None) or meta.get("price")
+                subscription_info = getattr(func, "_paymcp_subscription_info", None) or meta.get("subscription")
 
                 # Determine tool name for logging and subscription wrappers
                 tool_name = kwargs.get("name")
@@ -104,11 +105,14 @@ class PayMCP:
 
                 elif price_info:
                     # --- Create payment using provider ---
-                    # Deferred payment creation, so do not call provider.create_payment here
+                    kwargs["description"] = kwargs.get("description") or func.__doc__ or ""
+                    # don't need this anymore - moving price info to meta
+                    """
                     kwargs["description"] = description_with_price(
                         kwargs.get("description") or func.__doc__ or "",
                         price_info,
                     )
+                    """
                     target_func = self._wrapper_factory(
                         func,
                         self.mcp,
@@ -119,6 +123,10 @@ class PayMCP:
                     )
                     if self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS) and "meta" in kwargs:
                         kwargs.pop("meta", None)
+                        meta={}
+
+                    if (meta.get("price",None) is None):
+                        kwargs["meta"] ={**meta, "price":price_info}
                     
                     self.paidtools[tool_name] = { "amount": price_info["price"], "currency": price_info["currency"], "description": kwargs["description"] }
                 else:

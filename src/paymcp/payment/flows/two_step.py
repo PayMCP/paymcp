@@ -34,7 +34,8 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     }
 
     if config and "meta" in config:
-        confirm_tool_args["meta"] = config["meta"]
+        confirm_tool_args["meta"] = dict(config["meta"])
+        confirm_tool_args["meta"].pop("price",None)
 
     # --- Step 2: payment confirmation -----------------------------------------
     @mcp.tool(**confirm_tool_args)
