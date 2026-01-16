@@ -1,5 +1,9 @@
 # Changelog
 
+# 0.8.3
+### Changed
+- Default x402 facilitator is now https://facilitator.paymcp.info
+
 # 0.8.2
 ### Changed
 - Price/subscription settings can now be configured in tool `meta` (decorators still work too)
