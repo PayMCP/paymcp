@@ -6,6 +6,8 @@
 
 `paymcp` is a lightweight SDK that helps you add monetization to your MCP‑based tools, servers, or agents. It supports multiple payment providers and integrates seamlessly with MCP's tool/resource interface.
 
+Paper: [https://zenodo.org/records/18158720](https://zenodo.org/records/18158720)
+
 See the [full documentation](https://paymcp.info).
 
 ---
@@ -197,25 +199,18 @@ import os
 from paymcp.providers import X402Provider
 
 provider = X402Provider(
-    pay_to=[{"address": "0xYourAddress"}],
-    facilitator={
-        "apiKeyId": os.getenv("CDP_API_KEY_ID"),
-        "apiKeySecret": os.getenv("CDP_API_KEY_SECRET"),
-    },
+    pay_to=[{"address": "0xYourAddress"}]
 )
 ```
 
-> The mainnet facilitator requires a Coinbase Developer Platform (CDP) account.
-
-For **development and testing**, you can use the free public facilitator:
+For **development and testing**, use Base Sepolia testnet:
 
 ```python
 provider = X402Provider(
     pay_to=[{
         "address": "0xYourAddress",
         "network": "eip155:84532",  # Base Sepolia testnet
-    }],
-    facilitator={"url": "https://www.x402.org/facilitator"},
+    }]
 )
 ```
 

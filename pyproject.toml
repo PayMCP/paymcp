@@ -1,6 +1,6 @@
 [project]
 name = "paymcp"
-version = "0.8.2"
+version = "0.8.3"
 description = "Provider-agnostic payment layer for MCP (Model Context Protocol) tools and agents."
 authors = [
     {name = "PayMCP Open Source Contributors", email = "dev@paymcp.info"},

@@ -15,6 +15,7 @@ DEFAULT_NETWORK = "eip155:8453"
 DEFAULT_DOMAIN_NAME = "USD Coin"
 DEFAULT_DOMAIN_VERSION = "2"
 FACILITATOR_BASE = "https://api.cdp.coinbase.com/platform/v2/x402"
+FACILITATOR_PAYMCP = "https://facilitator.paymcp.info"
 
 ASSETS_MAP = {
     "eip155:8453:USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -58,7 +59,7 @@ class X402Provider(BasePaymentProvider):
         self.pay_to = []
         self.resource_info = resource_info
         self.x402_version = x402_version or 2
-        self.facilitator: Dict[str, Any] = {"url": FACILITATOR_BASE}
+        self.facilitator: Dict[str, Any] = {"url": FACILITATOR_PAYMCP}
         self.fee_payer: Optional[str] = None
 
         for pay in pay_to:
@@ -81,6 +82,8 @@ class X402Provider(BasePaymentProvider):
         if facilitator:
             if facilitator.get("url"):
                 self.facilitator["url"] = facilitator["url"]
+                if (self.facilitator["url"]=='https://api.cdp.coinbase.com'): 
+                    self.facilitator["url"]=FACILITATOR_BASE 
             if facilitator.get("createAuthHeaders"):
                 self.facilitator["createAuthHeaders"] = facilitator["createAuthHeaders"]
             elif facilitator.get("apiKeyId") and facilitator.get("apiKeySecret"):
