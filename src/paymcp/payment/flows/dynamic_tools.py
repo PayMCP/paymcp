@@ -8,23 +8,22 @@ Monitor: https://github.com/modelcontextprotocol/python-sdk for future APIs.
 If SDK adds hooks/filters, we can remove patches and use official APIs.
 """
 import functools
-import uuid
 from typing import Dict, Any, Set, NamedTuple
 from ...utils.messages import open_link_message
 import logging
-from ...utils.context import get_ctx_from_server
+from ...utils.context import get_ctx_from_server, get_stable_session_id
 from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
 
 # State: payment_id -> (session_id, args)
 class PaymentSession(NamedTuple):
-    session_id: int  # Session object ID (integer for consistent lookup)
+    session_id: str  # Stable per-session identifier
     args: Dict[str, Any]
 
 PAYMENTS: Dict[str, PaymentSession] = {}  # payment_id -> PaymentSession
-HIDDEN_TOOLS: Dict[int, Set[str]] = {}  # session_id (int) -> {hidden_tool_names}
-CONFIRMATION_TOOLS: Dict[str, int] = {}  # confirm_tool_name -> session_id (int)
+HIDDEN_TOOLS: Dict[str, Set[str]] = {}  # session_id -> {hidden_tool_names}
+CONFIRMATION_TOOLS: Dict[str, str] = {}  # confirm_tool_name -> session_id
 
 
 async def _send_notification(ctx):
@@ -64,14 +63,16 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         )
 
         pid = str(payment_id)
-        # Extract session ID from ctx parameter (use integer ID for consistency with filter)
+        # Extract stable session ID from ctx parameter
         ctx = kwargs.get("ctx", None)
         if ctx is None and mcp is not None:
             try:
                 ctx = get_ctx_from_server(mcp)
             except Exception:
                 ctx = None
-        session_id = id(ctx.session) if ctx and hasattr(ctx, 'session') and ctx.session else uuid.uuid4().int
+        session_id = get_stable_session_id(ctx)
+        if session_id is None:
+            raise RuntimeError("No Session ID provided.")
         confirm_name = f"confirm_{tool_name}_{pid}"
 
         logger.info(f"[DYNAMIC_TOOLS] Payment initiated: tool={tool_name}, session={session_id}, payment_id={pid}")
@@ -248,7 +249,7 @@ def _patch_list_tools_immediate(mcp):
     def filtered():
         tools = orig()
         try:
-            sid = id(mcp._mcp_server.request_context.session)
+            sid = get_stable_session_id(mcp._mcp_server.request_context)
             logger.info(f"[DYNAMIC_TOOLS] Filtering tools for session {sid}, HIDDEN_TOOLS={dict(HIDDEN_TOOLS)}, CONFIRMATION_TOOLS={dict(CONFIRMATION_TOOLS)}")
         except LookupError:
             logger.info("[DYNAMIC_TOOLS] No session context (LookupError) - returning all tools")
@@ -296,12 +297,11 @@ def _patch_list_tools(mcp):
         tools = orig()
         # WHY: Use the server's public request_context to get the session ID
         # request_context is a stable property that wraps the SDK's internal ContextVar
-        # We use id(session) because session objects are reused per connection
-        # This avoids importing low-level symbols like request_ctx
+                # This avoids importing low-level symbols like request_ctx
         try:
             # Use the public Server.request_context property to fetch the current session
             # Avoids importing request_ctx from low-level internals.
-            sid = id(mcp._mcp_server.request_context.session)
+            sid = get_stable_session_id(mcp._mcp_server.request_context)
         except LookupError:
             return tools  # No session context (e.g., during testing)
         except Exception:
