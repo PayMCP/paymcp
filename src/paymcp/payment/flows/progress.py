@@ -4,7 +4,7 @@ import functools
 from typing import Optional
 from ...utils.messages import open_link_message
 from ...utils.disconnect import is_disconnected
-from ...utils.context import get_ctx_from_server
+from ...utils.context import get_ctx_from_server, get_stable_session_id
 
 DEFAULT_POLL_SECONDS = 3          # how often to poll provider.get_payment_status
 MAX_WAIT_SECONDS = 15 * 60        # give up after 15 min 
@@ -53,7 +53,7 @@ def make_paid_wrapper(
                 except TypeError:
                     return
 
-        session_id = id(ctx.session) if ctx and hasattr(ctx, 'session') and ctx.session else None
+        session_id = get_stable_session_id(ctx)
 
         payment_id = None
         payment_url = None

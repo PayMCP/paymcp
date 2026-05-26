@@ -4,7 +4,7 @@ import logging
 from ...utils.disconnect import is_disconnected
 from ...utils.messages import open_link_message
 from ...utils.elicitation import run_elicitation_loop
-from ...utils.context import get_ctx_from_server
+from ...utils.context import get_ctx_from_server, get_stable_session_id
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             except Exception:
                 ctx = None
         logger.debug(f"[PAYMCP Elicitation] Starting tool: {func.__name__}")
-        session_id = id(ctx.session) if ctx and hasattr(ctx, 'session') and ctx.session else None
+        session_id = get_stable_session_id(ctx)
 
         if (session_id is None):
             logger.debug(f"[PayMCP Elicitation]. Can't initiate a payment: No session_id provided")

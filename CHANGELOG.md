@@ -1,5 +1,10 @@
 # Changelog
 
+# 0.8.4
+### Security
+- Fixed session-isolation vulnerability: payment/session state no longer uses Python object IDs (`id(session)`) as keys in ELICITATION, PROGRESS, and DYNAMIC_TOOLS flows.
+- Replaced `id(session)` keying with stable per-session identifiers to prevent cross-session state reuse when CPython reuses object addresses.
+
 # 0.8.3
 ### Changed
 - Default x402 facilitator is now https://facilitator.paymcp.info
