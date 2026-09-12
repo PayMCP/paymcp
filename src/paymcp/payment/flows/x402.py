@@ -123,6 +123,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     if not price_info or "price" not in price_info:
         raise RuntimeError(f"Invalid price info for tool {func.__name__}")
 
+    # The name clients actually call: @mcp.tool("other_name") may differ from func.__name__.
+    tool_name = (config or {}).get("name") or func.__name__
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         ctx = kwargs.get("ctx", None)
@@ -168,20 +171,19 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             if not payment_data:
                 raise RuntimeError("Payment provider did not return payment requirements")
 
-            if payment_data.get("x402Version") != 1:
+            is_v1 = payment_data.get("x402Version") == 1
+            if not is_v1:
                 # v2 requires a top-level ResourceInfo; the provider has no tool name,
                 # so default the URL to the tool being paid for. Build a new object
                 # rather than mutating what the provider returned.
-                payment_data = {
-                    **payment_data,
-                    "resource": {
-                        "url": f"mcp://tool/{func.__name__}",
-                        **(payment_data.get("resource") or {}),
-                    },
-                }
+                resource = payment_data.get("resource")
+                resource = dict(resource) if isinstance(resource, dict) else {}
+                if not resource.get("url"):
+                    resource["url"] = f"mcp://tool/{tool_name}"
+                payment_data = {**payment_data, "resource": resource}
 
             challenge_id = ""
-            if payment_data.get("x402Version") == 1:
+            if is_v1:
                 if not session_id:
                     raise RuntimeError("Session ID is not found")
                 challenge_id = f"{session_id}-{func.__name__}"
