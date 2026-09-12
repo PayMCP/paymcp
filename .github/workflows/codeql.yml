@@ -35,10 +35,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
         # Optional: Use custom config file to exclude generated/vendor code
@@ -48,7 +48,7 @@ jobs:
 
     # Set up Python environment for better analysis
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.10'  # Match your project's minimum Python version
 
@@ -61,10 +61,10 @@ jobs:
 
     # Autobuild for Python projects
     - name: Autobuild
-      uses: github/codeql-action/autobuild@v3
+      uses: github/codeql-action/autobuild@v4
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"
         # Upload SARIF results even if there are errors
