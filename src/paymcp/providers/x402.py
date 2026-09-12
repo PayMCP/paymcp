@@ -232,7 +232,12 @@ class X402Provider(BasePaymentProvider):
 
         response = {"x402Version": self.x402_version, "error": "Payment required", "accepts": accepts}
         if self.resource_info:
-            response["resourceInfo"] = self.resource_info
+            # x402 v2 names this top-level field `resource` (ResourceInfo object).
+            # Copy it: callers complete the URL, and this dict is shared across calls.
+            # `url` may be absent here — the transport layer knows the tool, this does not.
+            response["resource"] = (
+                dict(self.resource_info) if isinstance(self.resource_info, dict) else self.resource_info
+            )
         return response
 
     def get_payment_status(self, payment_signature_b64: str) -> str:

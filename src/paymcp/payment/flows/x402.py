@@ -3,6 +3,7 @@ import base64
 import functools
 import json
 import logging
+from urllib.parse import quote
 from typing import Any, Dict, Optional
 from ...utils.context import get_ctx_from_server, capture_client_from_ctx
 
@@ -123,6 +124,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     if not price_info or "price" not in price_info:
         raise RuntimeError(f"Invalid price info for tool {func.__name__}")
 
+    # The name clients actually call: @mcp.tool("other_name") may differ from func.__name__.
+    tool_name = (config or {}).get("name") or func.__name__
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         ctx = kwargs.get("ctx", None)
@@ -157,7 +161,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             newpayment = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
-                description=f"{func.__name__}() execution fee",
+                description=f"{tool_name}() execution fee",
             )
             payment_id, _, payment_data = (
                 newpayment[0],
@@ -168,8 +172,21 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             if not payment_data:
                 raise RuntimeError("Payment provider did not return payment requirements")
 
+            is_v1 = payment_data.get("x402Version") == 1
+            if not is_v1:
+                # v2 requires a top-level ResourceInfo; the provider has no tool name,
+                # so default the URL to the tool being paid for. Build a new object
+                # rather than mutating what the provider returned.
+                resource = payment_data.get("resource")
+                if resource is not None and not isinstance(resource, dict):
+                    log.warning("[PayMCP] ignoring non-dict x402 resource: %r", resource)
+                resource = dict(resource) if isinstance(resource, dict) else {}
+                if not resource.get("url"):
+                    resource["url"] = f"mcp://tool/{quote(tool_name, safe='')}"
+                payment_data = {**payment_data, "resource": resource}
+
             challenge_id = ""
-            if payment_data.get("x402Version") == 1:
+            if is_v1:
                 if not session_id:
                     raise RuntimeError("Session ID is not found")
                 challenge_id = f"{session_id}-{func.__name__}"

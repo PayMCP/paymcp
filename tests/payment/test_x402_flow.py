@@ -124,9 +124,10 @@ async def test_x402_creates_payment_when_no_signature():
     )
 
     result = await wrapper(ctx=ctx)
+    expected = {**payment_data, "resource": {"url": "mcp://tool/tool"}}
     assert result["error"]["code"] == 402
-    assert result["error"]["data"] == payment_data
-    state_store.set.assert_called_once_with("cid-123", {"paymentData": payment_data})
+    assert result["error"]["data"] == expected
+    state_store.set.assert_called_once_with("cid-123", {"paymentData": expected})
     provider.create_payment.assert_called_once()
 
 
@@ -413,6 +414,189 @@ async def test_x402_payment_pending_raises():
 
     with pytest.raises(RuntimeError, match="Payment is not confirmed yet"):
         await wrapper(ctx=ctx)
+
+
+def _v2_payment_data(**extra):
+    data = {
+        "x402Version": 2,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "eip155:8453",
+                "asset": "USDC",
+                "payTo": "0xabc",
+                "extra": {"challengeId": "cid-123"},
+            }
+        ],
+    }
+    data.update(extra)
+    return data
+
+
+def _wrapper_for(func, payment_data, state_store, config=None):
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("pid-123", "", payment_data))
+    return make_paid_wrapper(
+        func=func,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=state_store,
+        config=config,
+    )
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_defaults_resource_to_tool_url():
+    payment_data = _v2_payment_data()
+
+    async def premium_report(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _wrapper_for(premium_report, payment_data, AsyncMock())
+
+    result = await wrapper(ctx=ctx)
+    # x402 v2 marks `resource` required; the provider cannot know the tool name.
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/premium_report"}
+    # the provider's own object is left untouched
+    assert "resource" not in payment_data
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_keeps_configured_resource_and_fills_missing_url():
+    configured = _v2_payment_data(resource={"description": "Paid tool"})
+
+    async def premium_report(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    result = await _wrapper_for(premium_report, configured, AsyncMock())(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {
+        "description": "Paid tool",
+        "url": "mcp://tool/premium_report",
+    }
+    # the provider's nested dict must not gain the URL
+    assert configured["resource"] == {"description": "Paid tool"}
+
+    explicit = _v2_payment_data(resource={"url": "https://example.com/premium"})
+    result = await _wrapper_for(premium_report, explicit, AsyncMock())(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {"url": "https://example.com/premium"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_resource_uses_registered_tool_name():
+    payment_data = _v2_payment_data()
+
+    async def _premium_impl(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _wrapper_for(_premium_impl, payment_data, AsyncMock(), config={"name": "premium_report"})
+
+    result = await wrapper(ctx=ctx)
+    # @mcp.tool("premium_report") on def _premium_impl: clients call the registered name.
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/premium_report"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_resource_replaces_empty_url():
+    payment_data = _v2_payment_data(resource={"url": None, "description": "Paid tool"})
+
+    async def premium_report(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    result = await _wrapper_for(premium_report, payment_data, AsyncMock())(ctx=ctx)
+    # `url` is required; an unset env var must not produce a null one.
+    assert result["error"]["data"]["resource"] == {
+        "url": "mcp://tool/premium_report",
+        "description": "Paid tool",
+    }
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_tolerates_non_dict_resource():
+    payment_data = _v2_payment_data(resource="https://example.com/premium")
+
+    async def premium_report(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    result = await _wrapper_for(premium_report, payment_data, AsyncMock())(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/premium_report"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_resource_url_escapes_tool_name():
+    payment_data = _v2_payment_data()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _wrapper_for(tool, payment_data, AsyncMock(), config={"name": "Weather Report"})
+
+    result = await wrapper(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/Weather%20Report"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_resource_url_escapes_slashes():
+    payment_data = _v2_payment_data()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _wrapper_for(tool, payment_data, AsyncMock(), config={"name": "a/b"})
+
+    result = await wrapper(ctx=ctx)
+    # a slash must not open a new path segment in the URI
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/a%2Fb"}
+
+
+@pytest.mark.asyncio
+async def test_x402_description_uses_registered_tool_name():
+    payment_data = _v2_payment_data()
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("pid-123", "", payment_data))
+
+    async def _premium_impl(**_kwargs):
+        return "ok"
+
+    wrapper = make_paid_wrapper(
+        func=_premium_impl,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=AsyncMock(),
+        config={"name": "premium_report"},
+    )
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    await wrapper(ctx=ctx)
+
+    # the payer sees the tool they called, not our implementation function
+    assert provider.create_payment.call_args.kwargs["description"] == "premium_report() execution fee"
+
+
+@pytest.mark.asyncio
+async def test_x402_v1_does_not_gain_resource_field(monkeypatch):
+    # v1 carries `resource` inside each accepts entry and it is part of what the
+    # facilitator verifies, so the flow must not touch it.
+    payment_data = {
+        "x402Version": 1,
+        "accepts": [{"amount": "100", "network": "base", "asset": "USDC", "payTo": "0xabc"}],
+    }
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    monkeypatch.setattr(x402_flow, "capture_client_from_ctx", lambda _ctx: {"sessionId": "sess-1"})
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+
+    result = await _wrapper_for(tool, payment_data, AsyncMock())(ctx=ctx)
+    assert "resource" not in result["error"]["data"]
 
 
 @pytest.mark.asyncio
