@@ -1,5 +1,6 @@
 import base64
 import json
+from urllib.parse import quote
 from ..payment.payment_flow import Mode
 
 def build_x402_middleware(
@@ -83,9 +84,11 @@ def build_x402_middleware(
                     # so default the URL to the tool being paid for. Build a new object
                     # rather than mutating what the provider returned.
                     resource = payment_data.get("resource")
+                    if resource is not None and not isinstance(resource, dict):
+                        logger.warning("[PayMCP] ignoring non-dict x402 resource: %r", resource)
                     resource = dict(resource) if isinstance(resource, dict) else {}
                     if not resource.get("url"):
-                        resource["url"] = f"mcp://tool/{tool_name}"
+                        resource["url"] = f"mcp://tool/{quote(tool_name, safe='')}"
                     payment_data = {**payment_data, "resource": resource}
 
                 if x402_version == 1:

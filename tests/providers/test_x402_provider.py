@@ -115,6 +115,20 @@ def test_get_payment_requirements_v2_uses_canonical_resource_field():
     assert payment_data["resource"] == resource_info
 
 
+def test_get_payment_requirements_v2_copies_resource_info():
+    resource_info = {"description": "Paid tool"}
+    provider = X402Provider(
+        pay_to=[{"address": "0xabc", "network": "eip155:8453"}],
+        resource_info=resource_info,
+    )
+    first = provider.get_payment_requirements_v2("c1", 1.0, "Test")
+    second = provider.get_payment_requirements_v2("c2", 1.0, "Test")
+    # callers complete the URL; handing out the shared dict would pin the first
+    # tool's URL onto every later challenge
+    assert first["resource"] is not resource_info
+    assert first["resource"] is not second["resource"]
+
+
 def test_get_payment_requirements_v2_omits_resource_when_not_configured():
     provider = X402Provider(
         pay_to=[{"address": "0xabc", "network": "eip155:8453"}],

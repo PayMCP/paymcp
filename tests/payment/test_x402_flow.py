@@ -476,6 +476,8 @@ async def test_x402_v2_keeps_configured_resource_and_fills_missing_url():
         "description": "Paid tool",
         "url": "mcp://tool/premium_report",
     }
+    # the provider's nested dict must not gain the URL
+    assert configured["resource"] == {"description": "Paid tool"}
 
     explicit = _v2_payment_data(resource={"url": "https://example.com/premium"})
     result = await _wrapper_for(premium_report, explicit, AsyncMock())(ctx=ctx)
@@ -523,6 +525,20 @@ async def test_x402_v2_tolerates_non_dict_resource():
     ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
     result = await _wrapper_for(premium_report, payment_data, AsyncMock())(ctx=ctx)
     assert result["error"]["data"]["resource"] == {"url": "mcp://tool/premium_report"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_resource_url_escapes_tool_name():
+    payment_data = _v2_payment_data()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _wrapper_for(tool, payment_data, AsyncMock(), config={"name": "Weather Report"})
+
+    result = await wrapper(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/Weather%20Report"}
 
 
 @pytest.mark.asyncio

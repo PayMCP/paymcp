@@ -3,6 +3,7 @@ import base64
 import functools
 import json
 import logging
+from urllib.parse import quote
 from typing import Any, Dict, Optional
 from ...utils.context import get_ctx_from_server, capture_client_from_ctx
 
@@ -177,9 +178,11 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                 # so default the URL to the tool being paid for. Build a new object
                 # rather than mutating what the provider returned.
                 resource = payment_data.get("resource")
+                if resource is not None and not isinstance(resource, dict):
+                    log.warning("[PayMCP] ignoring non-dict x402 resource: %r", resource)
                 resource = dict(resource) if isinstance(resource, dict) else {}
                 if not resource.get("url"):
-                    resource["url"] = f"mcp://tool/{tool_name}"
+                    resource["url"] = f"mcp://tool/{quote(tool_name, safe='')}"
                 payment_data = {**payment_data, "resource": resource}
 
             challenge_id = ""
