@@ -13,6 +13,18 @@ from paymcp.payment.flows.dynamic_tools import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clear_dynamic_tools_state():
+    """These module-level dicts are shared global state; keep tests order-independent."""
+    PAYMENTS.clear()
+    HIDDEN_TOOLS.clear()
+    CONFIRMATION_TOOLS.clear()
+    yield
+    PAYMENTS.clear()
+    HIDDEN_TOOLS.clear()
+    CONFIRMATION_TOOLS.clear()
+
+
 def test_defer_list_tools_patch():
     """Test _defer_list_tools_patch() deferred patching mechanism."""
     # Create mock MCP without _tool_manager (simulating pre-tool-registration state)
@@ -251,20 +263,19 @@ def test_patch_list_tools_immediate_success_with_session():
     def original_list_tools():
         return original_tools
 
-    # Create mock MCP with valid session
+    # Create mock MCP with valid session. The session id must be the one
+    # get_stable_session_id() derives, not id(session) — see PaymentSession.
     mcp = Mock()
     mcp._mcp_server = Mock()
-    mock_session = Mock()
     mcp._mcp_server.request_context = Mock()
-    mcp._mcp_server.request_context.session = mock_session
+    mcp._mcp_server.request_context.client_id = "sess-1"
 
     # Create tool manager with original list_tools
     mcp._tool_manager = Mock()
     mcp._tool_manager.list_tools = original_list_tools
 
     # Set up HIDDEN_TOOLS to hide tool2
-    session_id = id(mock_session)
-    HIDDEN_TOOLS[session_id] = {"hidden_tool"}
+    HIDDEN_TOOLS["sess-1"] = {"hidden_tool"}
 
     # Apply patching
     _patch_list_tools_immediate(mcp)
@@ -294,16 +305,15 @@ def test_patch_list_tools_success_with_session():
     # Create mock MCP with valid session
     mcp = Mock()
     mcp._mcp_server = Mock()
-    mock_session = Mock()
     mcp._mcp_server.request_context = Mock()
-    mcp._mcp_server.request_context.session = mock_session
+    mcp._mcp_server.request_context.client_id = "sess-1"
 
     # Create tool manager with original list_tools
     mcp._tool_manager = Mock()
     mcp._tool_manager.list_tools = original_list_tools
 
-    # Set up CONFIRMATION_TOOLS with different session
-    CONFIRMATION_TOOLS["confirm_tool_payment123"] = 99999  # Different session
+    # Set up CONFIRMATION_TOOLS with a different session than this one
+    CONFIRMATION_TOOLS["confirm_tool_payment123"] = "sess-other"
 
     # Apply patching
     _patch_list_tools(mcp)
