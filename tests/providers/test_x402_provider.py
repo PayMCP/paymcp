@@ -99,6 +99,30 @@ def test_get_payment_requirements_v2_includes_challenge_and_description():
     assert accept["extra"]["description"] == "Test"
 
 
+def test_get_payment_requirements_v2_uses_canonical_resource_field():
+    resource_info = {
+        "url": "https://example.com/premium",
+        "description": "Paid tool",
+        "mimeType": "application/json",
+    }
+    provider = X402Provider(
+        pay_to=[{"address": "0xabc", "network": "eip155:8453"}],
+        resource_info=resource_info,
+    )
+    payment_data = provider.get_payment_requirements_v2("challenge-1", 1.5, "Test")
+    # x402 v2 PaymentRequired carries ResourceInfo under `resource`, not `resourceInfo`.
+    assert set(payment_data) == {"x402Version", "error", "resource", "accepts"}
+    assert payment_data["resource"] == resource_info
+
+
+def test_get_payment_requirements_v2_omits_resource_when_not_configured():
+    provider = X402Provider(
+        pay_to=[{"address": "0xabc", "network": "eip155:8453"}],
+    )
+    payment_data = provider.get_payment_requirements_v2("challenge-1", 1.5, "Test")
+    assert "resource" not in payment_data
+
+
 def test_create_auth_headers_for_cdp(monkeypatch):
     secret = base64.b64encode(b"a" * 32).decode("ascii")
 

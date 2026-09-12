@@ -232,7 +232,8 @@ class X402Provider(BasePaymentProvider):
 
         response = {"x402Version": self.x402_version, "error": "Payment required", "accepts": accepts}
         if self.resource_info:
-            response["resourceInfo"] = self.resource_info
+            # x402 v2 names this top-level field `resource` (ResourceInfo object).
+            response["resource"] = self.resource_info
         return response
 
     def get_payment_status(self, payment_signature_b64: str) -> str:
