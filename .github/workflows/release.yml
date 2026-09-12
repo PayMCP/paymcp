@@ -1,0 +1,110 @@
+name: "Release"
+
+# Publishes to PyPI when a version lands on main. `develop` is merged into main
+# through a PR as usual; that merge is what triggers this.
+#
+# Nothing is published unless the version in pyproject.toml is one PyPI does not
+# already have, so re-running or merging again is a no-op rather than an error.
+#
+# The publish job runs in the "release" environment. Give that environment a
+# required reviewer in repo settings and every release becomes one deliberate
+# click — publishing cannot be undone: PyPI never lets a version number be
+# reused, even after a delete.
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: "check version"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: v
+        name: Compare pyproject version against PyPI
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version = ' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not read version from pyproject.toml"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/paymcp/${VERSION}/json")
+          if [ "$CODE" = "200" ]; then
+            echo "paymcp ${VERSION} is already on PyPI - nothing to do"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif [ "$CODE" = "404" ]; then
+            echo "paymcp ${VERSION} is new - will publish"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::unexpected HTTP ${CODE} from PyPI; refusing to guess"
+            exit 1
+          fi
+
+  publish:
+    name: "publish ${{ needs.check.outputs.version }}"
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    # Approval gate. Also the place to scope PyPI trusted publishing to.
+    environment: release
+    permissions:
+      contents: write   # create the tag and the GitHub Release
+      id-token: write   # PyPI trusted publishing (OIDC) - no API token needed
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install PDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install pdm
+
+      - name: Install dependencies
+        run: pdm install --dev
+
+      # The PR gate already ran these, but a release is worth re-proving on the
+      # exact commit being shipped.
+      - name: Run tests
+        run: pdm run pytest -q
+
+      - name: Build
+        run: pdm build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+      - name: Tag and create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The section for this version, up to the next "# <number>" heading.
+          awk -v want="# ${VERSION}" '
+            $0 == want { found = 1; next }
+            found && /^# [0-9]/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No CHANGELOG section for ${VERSION}." > notes.md
+          fi
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+          gh release create "v${VERSION}" --title "v${VERSION}" --notes-file notes.md
