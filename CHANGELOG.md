@@ -1,5 +1,15 @@
 # Changelog
 
+# 0.9.0
+### Breaking Changes
+- x402 v2 challenges now carry the resource description under `resource`, the field name the v2 `PaymentRequired` schema defines. It was previously emitted as `resourceInfo`, which is not an x402 field, so v2 clients never found it. Anyone reading the old key must switch.
+
+### Fixed
+- `resource` is required by the v2 schema but was omitted unless `resource_info` was configured. Every v2 challenge PayMCP sends now carries it, defaulting to `mcp://tool/<tool_name>` — the form used by the x402 MCP transport spec. The name is the registered one, so `@mcp.tool("other_name")` advertises `mcp://tool/other_name` rather than the implementation function's name.
+- Note that a `resource_info` with a `url` still wins, and it is a single value shared by every tool: operators who configured it for v1 (where it fills the `resource` string inside `accepts`) will not see the per-tool default. Leave `url` unset to get it.
+
+x402 v1 challenges are unchanged, including their non-standard top-level `resourceInfo`, which is left alone deliberately: in v1 the fields the facilitator verifies live inside `accepts`.
+
 # 0.8.4
 ### Security
 - Fixed session-isolation vulnerability: payment/session state no longer uses Python object IDs (`id(session)`) as keys in ELICITATION, PROGRESS, and DYNAMIC_TOOLS flows.

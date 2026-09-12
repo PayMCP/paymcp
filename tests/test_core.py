@@ -233,6 +233,42 @@ class TestPayMCP:
         # Verify the wrapper factory was called
         assert wrapper is not None
 
+    @pytest.mark.parametrize(
+        "tool_args, tool_kwargs, expected_name",
+        [
+            ((), {"name": "renamed_tool"}, "renamed_tool"),
+            (("renamed_tool",), {}, "renamed_tool"),
+            ((), {}, "impl_func"),
+        ],
+    )
+    def test_resolved_tool_name_reaches_wrapper_factory(
+        self, mock_mcp_instance, providers_config, tool_args, tool_kwargs, expected_name
+    ):
+        """The flow builds mcp://tool/<name> from this, so it must be the registered name."""
+        # capture before PayMCP replaces mcp.tool with its patched version
+        original_tool = mock_mcp_instance.tool
+        paymcp = PayMCP(mock_mcp_instance, providers=providers_config)
+
+        # a real function: a Mock would auto-create _paymcp_subscription_info and
+        # send registration down the subscription path instead
+        def impl_func():
+            """Test function"""
+            return "ok"
+
+        impl_func._paymcp_price_info = {"price": 10.0, "currency": "USD"}
+
+        mock_wrapper_factory = Mock(return_value=Mock())
+        paymcp._wrapper_factory = mock_wrapper_factory
+
+        paymcp.mcp.tool(*tool_args, description="Test tool", **tool_kwargs)(impl_func)
+
+        config = mock_wrapper_factory.call_args.kwargs["config"]
+        assert config["name"] == expected_name
+
+        # the resolved name must not be injected into the real registration
+        if "name" not in tool_kwargs:
+            assert "name" not in original_tool.call_args.kwargs
+
     def test_decorator_without_price_info(self, mock_mcp_instance, providers_config):
         """Test that tools without price info are not wrapped."""
         paymcp = PayMCP(mock_mcp_instance, providers=providers_config)

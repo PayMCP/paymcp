@@ -119,7 +119,9 @@ class PayMCP:
                         self.providers,
                         price_info,
                         self.state_store,
-                        config=kwargs.copy(),
+                        # kwargs.copy() is local to the wrapper, so adding the resolved
+                        # name here does not leak into original_tool(*args, **kwargs).
+                        config={**kwargs, "name": tool_name},
                     )
                     if self.payment_flow in (PaymentFlow.TWO_STEP, PaymentFlow.DYNAMIC_TOOLS) and "meta" in kwargs:
                         kwargs.pop("meta", None)
