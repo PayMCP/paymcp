@@ -22,12 +22,12 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     # Only run if this is not a fork PR (security measure)
     - name: Dependency Review
       if: github.event.pull_request.head.repo.fork == false
-      uses: actions/dependency-review-action@v4
+      uses: actions/dependency-review-action@v5
       with:
         # Fail on critical and high severity vulnerabilities
         fail-on-severity: critical
@@ -41,7 +41,7 @@ jobs:
     # For fork PRs, run a limited check without secrets
     - name: Dependency Review (Fork PR)
       if: github.event.pull_request.head.repo.fork == true
-      uses: actions/dependency-review-action@v4
+      uses: actions/dependency-review-action@v5
       with:
         fail-on-severity: critical
         allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, GPL-3.0, LGPL-2.1, LGPL-3.0

@@ -27,17 +27,17 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.10'  # Match your project's Python requirement
         cache: 'pip'
 
     # Cache PDM dependencies for faster builds
     - name: Cache PDM dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cache/pdm
@@ -109,7 +109,7 @@ jobs:
 
     # Upload coverage reports as artifacts
     - name: Upload coverage reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()  # Upload even if tests failed
       with:
         name: coverage-reports
@@ -121,7 +121,7 @@ jobs:
     # Comment on PR with coverage results (only for non-fork PRs)
     - name: Comment PR with coverage results
       if: github.event.pull_request.head.repo.fork == false && always()
-      uses: actions/github-script@v8
+      uses: actions/github-script@v9
       with:
         script: |
           const coveragePercent = process.env.COVERAGE_PERCENT || '0';
