@@ -210,6 +210,37 @@ async def test_x402_middleware_v2_resource_variants(monkeypatch, configured, exp
 
 
 @pytest.mark.asyncio
+async def test_x402_middleware_escapes_tool_name(monkeypatch):
+    _install_fake_starlette(monkeypatch)
+    payment_data = {
+        "x402Version": 2,
+        "accepts": [{"amount": "100", "network": "eip155:8453", "asset": "USDC",
+                     "payTo": "0xabc", "extra": {"challengeId": "cid-123"}}],
+    }
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("cid-123", "", payment_data))
+
+    state_store = AsyncMock()
+    Middleware = build_x402_middleware(
+        providers={"x402": provider},
+        state_store=state_store,
+        paidtools={"a/b": {"amount": 1.0, "currency": "USD", "description": "test"}},
+        mode=Mode.X402,
+        logger=Mock(),
+    )
+
+    async def call_next(_request):
+        return Mock(status_code=200)
+
+    request = _make_request({"method": "tools/call", "params": {"name": "a/b"}})
+    await Middleware(Mock()).dispatch(request, call_next)
+
+    stored = state_store.set.call_args[0][1]["paymentData"]
+    # a slash must not open a new path segment in the URI
+    assert stored["resource"] == {"url": "mcp://tool/a%2Fb"}
+
+
+@pytest.mark.asyncio
 async def test_x402_middleware_passes_through_with_signature(monkeypatch):
     _install_fake_starlette(monkeypatch)
     provider = Mock()

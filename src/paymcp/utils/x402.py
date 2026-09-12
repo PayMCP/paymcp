@@ -84,7 +84,9 @@ def build_x402_middleware(
                     # so default the URL to the tool being paid for. Build a new object
                     # rather than mutating what the provider returned.
                     resource = payment_data.get("resource")
-                    if resource is not None and not isinstance(resource, dict):
+                    if resource is not None and not isinstance(resource, dict) and logger:
+                        # guarded: this is inside the try below, and an AttributeError
+                        # here would fall through to call_next and run the tool unpaid
                         logger.warning("[PayMCP] ignoring non-dict x402 resource: %r", resource)
                     resource = dict(resource) if isinstance(resource, dict) else {}
                     if not resource.get("url"):

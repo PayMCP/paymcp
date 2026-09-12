@@ -161,7 +161,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             newpayment = provider.create_payment(
                 amount=price_info["price"],
                 currency=price_info["currency"],
-                description=f"{func.__name__}() execution fee",
+                description=f"{tool_name}() execution fee",
             )
             payment_id, _, payment_data = (
                 newpayment[0],

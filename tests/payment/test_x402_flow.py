@@ -542,6 +542,45 @@ async def test_x402_v2_resource_url_escapes_tool_name():
 
 
 @pytest.mark.asyncio
+async def test_x402_v2_resource_url_escapes_slashes():
+    payment_data = _v2_payment_data()
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _wrapper_for(tool, payment_data, AsyncMock(), config={"name": "a/b"})
+
+    result = await wrapper(ctx=ctx)
+    # a slash must not open a new path segment in the URI
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/a%2Fb"}
+
+
+@pytest.mark.asyncio
+async def test_x402_description_uses_registered_tool_name():
+    payment_data = _v2_payment_data()
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("pid-123", "", payment_data))
+
+    async def _premium_impl(**_kwargs):
+        return "ok"
+
+    wrapper = make_paid_wrapper(
+        func=_premium_impl,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=AsyncMock(),
+        config={"name": "premium_report"},
+    )
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    await wrapper(ctx=ctx)
+
+    # the payer sees the tool they called, not our implementation function
+    assert provider.create_payment.call_args.kwargs["description"] == "premium_report() execution fee"
+
+
+@pytest.mark.asyncio
 async def test_x402_v1_does_not_gain_resource_field(monkeypatch):
     # v1 carries `resource` inside each accepts entry and it is part of what the
     # facilitator verifies, so the flow must not touch it.
