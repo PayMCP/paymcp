@@ -124,9 +124,10 @@ async def test_x402_creates_payment_when_no_signature():
     )
 
     result = await wrapper(ctx=ctx)
+    expected = {**payment_data, "resource": {"url": "mcp://tool/tool"}}
     assert result["error"]["code"] == 402
-    assert result["error"]["data"] == payment_data
-    state_store.set.assert_called_once_with("cid-123", {"paymentData": payment_data})
+    assert result["error"]["data"] == expected
+    state_store.set.assert_called_once_with("cid-123", {"paymentData": expected})
     provider.create_payment.assert_called_once()
 
 
@@ -413,6 +414,88 @@ async def test_x402_payment_pending_raises():
 
     with pytest.raises(RuntimeError, match="Payment is not confirmed yet"):
         await wrapper(ctx=ctx)
+
+
+def _v2_payment_data(**extra):
+    data = {
+        "x402Version": 2,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "eip155:8453",
+                "asset": "USDC",
+                "payTo": "0xabc",
+                "extra": {"challengeId": "cid-123"},
+            }
+        ],
+    }
+    data.update(extra)
+    return data
+
+
+def _v2_wrapper(func, payment_data, state_store):
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("pid-123", "", payment_data))
+    return make_paid_wrapper(
+        func=func,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=state_store,
+    )
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_defaults_resource_to_tool_url():
+    payment_data = _v2_payment_data()
+
+    async def premium_report(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    wrapper = _v2_wrapper(premium_report, payment_data, AsyncMock())
+
+    result = await wrapper(ctx=ctx)
+    # x402 v2 marks `resource` required; the provider cannot know the tool name.
+    assert result["error"]["data"]["resource"] == {"url": "mcp://tool/premium_report"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v2_keeps_configured_resource_and_fills_missing_url():
+    configured = _v2_payment_data(resource={"description": "Paid tool"})
+
+    async def premium_report(**_kwargs):
+        return "ok"
+
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+    result = await _v2_wrapper(premium_report, configured, AsyncMock())(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {
+        "description": "Paid tool",
+        "url": "mcp://tool/premium_report",
+    }
+
+    explicit = _v2_payment_data(resource={"url": "https://example.com/premium"})
+    result = await _v2_wrapper(premium_report, explicit, AsyncMock())(ctx=ctx)
+    assert result["error"]["data"]["resource"] == {"url": "https://example.com/premium"}
+
+
+@pytest.mark.asyncio
+async def test_x402_v1_does_not_gain_resource_field(monkeypatch):
+    # v1 carries `resource` inside each accepts entry and it is part of what the
+    # facilitator verifies, so the flow must not touch it.
+    payment_data = {
+        "x402Version": 1,
+        "accepts": [{"amount": "100", "network": "base", "asset": "USDC", "payTo": "0xabc"}],
+    }
+
+    async def tool(**_kwargs):
+        return "ok"
+
+    monkeypatch.setattr(x402_flow, "capture_client_from_ctx", lambda _ctx: {"sessionId": "sess-1"})
+    ctx = DummyCtx(request_context=DummyRequestContext(request=DummyRequest({})), session=DummySession())
+
+    result = await _v2_wrapper(tool, payment_data, AsyncMock())(ctx=ctx)
+    assert "resource" not in result["error"]["data"]
 
 
 @pytest.mark.asyncio

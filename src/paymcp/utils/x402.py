@@ -78,6 +78,17 @@ def build_x402_middleware(
                 )
                 x402_version = payment_data.get("x402Version")
 
+                if x402_version != 1:
+                    # v2 requires a top-level ResourceInfo; the provider has no tool name,
+                    # so default the URL to the tool being paid for. Build a new object
+                    # rather than mutating what the provider returned.
+                    payment_data = {
+                        **payment_data,
+                        "resource": {
+                            "url": f"mcp://tool/{tool_name}",
+                            **(payment_data.get("resource") or {}),
+                        },
+                    }
 
                 if x402_version == 1:
                     await state_store.set(f"{session_id}-{tool_name}", {"paymentData": payment_data})

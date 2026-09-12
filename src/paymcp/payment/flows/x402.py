@@ -168,6 +168,18 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             if not payment_data:
                 raise RuntimeError("Payment provider did not return payment requirements")
 
+            if payment_data.get("x402Version") != 1:
+                # v2 requires a top-level ResourceInfo; the provider has no tool name,
+                # so default the URL to the tool being paid for. Build a new object
+                # rather than mutating what the provider returned.
+                payment_data = {
+                    **payment_data,
+                    "resource": {
+                        "url": f"mcp://tool/{func.__name__}",
+                        **(payment_data.get("resource") or {}),
+                    },
+                }
+
             challenge_id = ""
             if payment_data.get("x402Version") == 1:
                 if not session_id:

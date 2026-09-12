@@ -114,7 +114,47 @@ async def test_x402_middleware_returns_payment_required(monkeypatch):
 
     assert response.status_code == 402
     assert "PAYMENT-REQUIRED" in response.headers
-    state_store.set.assert_called_once_with("cid-123", {"paymentData": payment_data})
+    expected = {**payment_data, "resource": {"url": "mcp://tool/paid_tool"}}
+    state_store.set.assert_called_once_with("cid-123", {"paymentData": expected})
+
+
+@pytest.mark.asyncio
+async def test_x402_middleware_defaults_v2_resource_to_tool_url(monkeypatch):
+    _install_fake_starlette(monkeypatch)
+    payment_data = {
+        "x402Version": 2,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "eip155:8453",
+                "asset": "USDC",
+                "payTo": "0xabc",
+                "extra": {"challengeId": "cid-123"},
+            }
+        ],
+    }
+    provider = Mock()
+    provider.create_payment = Mock(return_value=("cid-123", "", payment_data))
+
+    state_store = AsyncMock()
+    Middleware = build_x402_middleware(
+        providers={"x402": provider},
+        state_store=state_store,
+        paidtools={"paid_tool": {"amount": 1.0, "currency": "USD", "description": "test"}},
+        mode=Mode.X402,
+        logger=Mock(),
+    )
+
+    async def call_next(_request):
+        return Mock(status_code=200)
+
+    request = _make_request({"method": "tools/call", "params": {"name": "paid_tool"}})
+    await Middleware(Mock()).dispatch(request, call_next)
+
+    stored = state_store.set.call_args[0][1]["paymentData"]
+    assert stored["resource"] == {"url": "mcp://tool/paid_tool"}
+    # the provider's own object is left untouched
+    assert "resource" not in payment_data
 
 
 @pytest.mark.asyncio
