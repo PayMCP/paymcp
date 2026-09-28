@@ -58,7 +58,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # A previous confirm already ran the tool but the client dropped before
             # receiving the result: return the stored one rather than running again.
             has_result, cached_result = await peek_completed_result(
-                state_store, payment_id, RESULT_NS_PAYMENT
+                state_store, payment_id, RESULT_NS_PAYMENT, func.__name__
             )
             if has_result:
                 if await is_disconnected(ctx):
@@ -115,7 +115,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             if await is_disconnected(ctx):
                 logger.warning("[confirm_tool] aborted after payment confirmation but before returning tool result.")
                 await save_completed_result(
-                    state_store, payment_id, result, RESULT_NS_PAYMENT
+                    state_store, payment_id, result, RESULT_NS_PAYMENT, func.__name__
                 )
                 return {
                     "status": "pending",

@@ -135,7 +135,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # receiving the result: hand back the stored one instead of charging
             # the server a second execution.
             has_result, cached_result = await peek_completed_result(
-                state_store, existed_payment_id, RESULT_NS_PAYMENT
+                state_store, existed_payment_id, RESULT_NS_PAYMENT, func.__name__
             )
             if has_result:
                 if await is_disconnected(ctx):
@@ -219,7 +219,8 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             if await is_disconnected(ctx):
                 logger.warning("[resubmit] Disconnected after payment confirmation; returning pending result")
                 await save_completed_result(
-                    state_store, existed_payment_id, result, RESULT_NS_PAYMENT
+                    state_store, existed_payment_id, result, RESULT_NS_PAYMENT,
+                    func.__name__,
                 )
                 return {
                     "status": "pending",

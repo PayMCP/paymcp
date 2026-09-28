@@ -73,9 +73,9 @@ def make_paid_wrapper(
         # new payment and running the tool again. The state key covers every call
         # this session makes to this tool, so the result is only served back to
         # the call that produced it.
-        fingerprint = call_fingerprint(kwargs)
+        fingerprint = call_fingerprint(kwargs, args)
         has_result, cached_result = await peek_completed_result(
-            state_store, state_key, RESULT_NS_SESSION, fingerprint
+            state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
         )
         if has_result:
             if await is_disconnected(ctx):
@@ -86,7 +86,9 @@ def make_paid_wrapper(
             # Unlike the payment-keyed flows, this key is reused by later calls,
             # so the result is dropped once delivered - otherwise the next
             # identical call would be served from cache instead of being paid for.
-            await clear_completed_result(state_store, state_key, RESULT_NS_SESSION)
+            await clear_completed_result(
+                state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
+            )
             await state_store.delete(state_key)
             return cached_result
 
@@ -159,7 +161,8 @@ def make_paid_wrapper(
         result = await func(*args, **kwargs)
         if await is_disconnected(ctx):
             await save_completed_result(
-                state_store, state_key, result, RESULT_NS_SESSION, fingerprint
+                state_store, state_key, result, RESULT_NS_SESSION,
+                func.__name__, fingerprint,
             )
             return {
                 "status": "pending",

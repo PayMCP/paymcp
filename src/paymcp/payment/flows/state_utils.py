@@ -36,20 +36,32 @@ def _result_key(namespace: str, key: str) -> str:
     return f"paymcp:result:{namespace}:{key}"
 
 
-def call_fingerprint(kwargs: Optional[Dict[str, Any]]) -> str:
+# Returned when a call cannot be fingerprinted at all. Two such calls never
+# match each other, so a result is simply not served from cache for them.
+_UNFINGERPRINTABLE = "unfingerprintable"
+
+
+def call_fingerprint(
+    kwargs: Optional[Dict[str, Any]] = None, args: Optional[Any] = None
+) -> str:
     """Identify the call a result belongs to.
 
     Flows keyed by (tool, session) reuse one key across every call the session
     makes to that tool, so a cached result has to be pinned to the arguments it
     was produced for - otherwise the next call, with different arguments, would
     be answered with the previous call's result.
+
+    This runs on every call, including calls that never disconnect, so it never
+    raises: an input it cannot describe just fails to match anything.
     """
+    payload = {"kwargs": sanitize_state_args(kwargs or {}), "args": list(args or ())}
     try:
-        canonical = json.dumps(
-            sanitize_state_args(kwargs or {}), sort_keys=True, default=repr
-        )
+        canonical = json.dumps(payload, sort_keys=True, default=repr)
     except Exception:
-        canonical = repr(sorted((kwargs or {}).items(), key=lambda kv: kv[0]))
+        try:
+            canonical = repr(payload)
+        except Exception:
+            return _UNFINGERPRINTABLE
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -58,6 +70,7 @@ async def save_completed_result(
     key: Any,
     result: Any,
     namespace: str,
+    tool: str,
     fingerprint: Optional[str] = None,
 ) -> bool:
     """Persist the result of a paid tool call so a retry can return it.
@@ -71,7 +84,7 @@ async def save_completed_result(
     if state_store is None or key is None:
         return False
 
-    payload = {"result": result}
+    payload = {"result": result, "tool": tool}
     if fingerprint is not None:
         payload["fingerprint"] = fingerprint
 
@@ -94,9 +107,15 @@ async def peek_completed_result(
     state_store,
     key: Any,
     namespace: str,
+    tool: str,
     fingerprint: Optional[str] = None,
 ) -> Tuple[bool, Any]:
-    """Return (True, result) when a completed result is cached for this call."""
+    """Return (True, result) when a completed result is cached for this call.
+
+    A payment id identifies a payment, not a tool, and every paid tool reads
+    the same namespace - so the tool that produced the result has to match too,
+    otherwise one tool would answer with another tool's output.
+    """
     if state_store is None or key is None:
         return False, None
 
@@ -115,6 +134,12 @@ async def peek_completed_result(
     if not isinstance(payload, Mapping) or "result" not in payload:
         return False, None
 
+    if payload.get("tool") != tool:
+        logger.debug(
+            "[PayMCP] Cached result for %s belongs to another tool; ignoring it.", key
+        )
+        return False, None
+
     if fingerprint is not None and payload.get("fingerprint") != fingerprint:
         logger.debug(
             "[PayMCP] Cached result for %s belongs to a different call; ignoring it.", key
@@ -124,10 +149,33 @@ async def peek_completed_result(
     return True, payload["result"]
 
 
-async def clear_completed_result(state_store, key: Any, namespace: str) -> None:
-    """Drop a cached result."""
+async def clear_completed_result(
+    state_store,
+    key: Any,
+    namespace: str,
+    tool: Optional[str] = None,
+    fingerprint: Optional[str] = None,
+) -> None:
+    """Drop a cached result, but only the one that was just handed back.
+
+    Session-keyed flows share one key across every call the session makes to a
+    tool, and they hold no lock: between reading a result and clearing it,
+    another call can cache its own under the same key. Clearing blindly would
+    throw away a result someone has already paid for.
+    """
     if state_store is None or key is None:
         return
+
+    if tool is not None or fingerprint is not None:
+        still_ours, _ = await peek_completed_result(
+            state_store, key, namespace, tool, fingerprint
+        )
+        if not still_ours:
+            logger.debug(
+                "[PayMCP] Cached result for %s is no longer the one served; keeping it.", key
+            )
+            return
+
     try:
         await state_store.delete(_result_key(namespace, str(key)))
     except Exception:

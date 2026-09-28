@@ -325,6 +325,13 @@ def clean_dynamic_tools_state():
 async def test_dynamic_tools_retry_returns_result_without_re_executing(
     provider, price_info, clean_dynamic_tools_state
 ):
+    """The confirm tool is called here with an explicit ctx.
+
+    In production it does not get one: `_confirm(ctx=None)` carries no Context
+    annotation, so FastMCP never injects one and the disconnect handling never
+    runs. Resolving that context is a behaviour change for this flow and is
+    left to its own change; this covers the caching itself.
+    """
     tool = CountingTool()
     ctx = FakeCtx()
     mcp = MagicMock()
@@ -357,16 +364,16 @@ async def test_dynamic_tools_retry_returns_result_without_re_executing(
 
 @pytest.mark.asyncio
 async def test_peek_returns_nothing_when_no_result_was_stored(state_store):
-    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT) == (False, None)
+    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
 
 
 @pytest.mark.asyncio
 async def test_save_peek_and_clear_round_trip(state_store):
-    assert await save_completed_result(state_store, "payment_1", {"ok": True}, RESULT_NS_PAYMENT) is True
-    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT) == (True, {"ok": True})
+    assert await save_completed_result(state_store, "payment_1", {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is True
+    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (True, {"ok": True})
 
-    await clear_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT)
-    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT) == (False, None)
+    await clear_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool")
+    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
 
 
 @pytest.mark.asyncio
@@ -376,22 +383,22 @@ async def test_save_reports_failure_when_the_store_refuses_the_result():
             raise TypeError("not JSON serializable")
 
     store = RejectingStore()
-    assert await save_completed_result(store, "payment_1", object(), RESULT_NS_PAYMENT) is False
-    assert await peek_completed_result(store, "payment_1", RESULT_NS_PAYMENT) == (False, None)
+    assert await save_completed_result(store, "payment_1", object(), RESULT_NS_PAYMENT, "expensive_tool") is False
+    assert await peek_completed_result(store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
 
 
 @pytest.mark.asyncio
 async def test_helpers_tolerate_a_missing_store_or_key(state_store):
-    assert await save_completed_result(None, "payment_1", {"ok": True}, RESULT_NS_PAYMENT) is False
-    assert await save_completed_result(state_store, None, {"ok": True}, RESULT_NS_PAYMENT) is False
-    assert await peek_completed_result(None, "payment_1", RESULT_NS_PAYMENT) == (False, None)
-    await clear_completed_result(None, "payment_1", RESULT_NS_PAYMENT)
+    assert await save_completed_result(None, "payment_1", {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is False
+    assert await save_completed_result(state_store, None, {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is False
+    assert await peek_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
+    await clear_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool")
 
 
 @pytest.mark.asyncio
 async def test_result_cache_does_not_collide_with_the_payment_state(state_store):
     await state_store.set("payment_1", {"original": "args"})
-    await save_completed_result(state_store, "payment_1", {"ok": True}, RESULT_NS_PAYMENT)
+    await save_completed_result(state_store, "payment_1", {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool")
 
     stored = await state_store.get("payment_1")
     assert stored["args"] == {"original": "args"}
@@ -405,7 +412,10 @@ async def test_elicitation_does_not_answer_a_different_call_from_cache(
 ):
     """A session-keyed cache covers every call to the tool, so it is pinned to
     the arguments that paid for it: a later call with different arguments must
-    be charged and executed, not answered with the earlier result."""
+    be executed rather than answered with the earlier result.
+
+    (Whether that later call is charged again is a separate, pre-existing
+    question: the paid state left behind by the dropped call is reused.)"""
     from paymcp.payment.flows import elicitation
 
     tool = CountingTool()
@@ -488,17 +498,17 @@ async def test_a_caller_supplied_payment_id_cannot_reach_a_session_keyed_result(
     assert other_tool.calls == 0
     assert await state_store.get("expensive_tool:SESS1") is not None
     assert await peek_completed_result(
-        state_store, "expensive_tool:SESS1", RESULT_NS_SESSION,
+        state_store, "expensive_tool:SESS1", RESULT_NS_SESSION, "expensive_tool",
         call_fingerprint({"text": "SECRET"}),
     ) == (True, {"report": "result #1"})
 
 
 @pytest.mark.asyncio
 async def test_result_namespaces_do_not_overlap(state_store):
-    await save_completed_result(state_store, "k", {"from": "session"}, RESULT_NS_SESSION)
+    await save_completed_result(state_store, "k", {"from": "session"}, RESULT_NS_SESSION, "t")
 
-    assert await peek_completed_result(state_store, "k", RESULT_NS_PAYMENT) == (False, None)
-    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION) == (
+    assert await peek_completed_result(state_store, "k", RESULT_NS_PAYMENT, "t") == (False, None)
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t") == (
         True,
         {"from": "session"},
     )
@@ -508,12 +518,12 @@ async def test_result_namespaces_do_not_overlap(state_store):
 async def test_a_cached_result_is_only_served_to_a_matching_call(state_store):
     fingerprint = call_fingerprint({"text": "A"})
     await save_completed_result(
-        state_store, "k", {"ok": True}, RESULT_NS_SESSION, fingerprint
+        state_store, "k", {"ok": True}, RESULT_NS_SESSION, "t", fingerprint
     )
 
     other = call_fingerprint({"text": "B"})
-    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, other) == (False, None)
-    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, fingerprint) == (
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", other) == (False, None)
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", fingerprint) == (
         True,
         {"ok": True},
     )
@@ -524,3 +534,98 @@ async def test_call_fingerprint_ignores_context_and_argument_order():
     ctx = FakeCtx()
     assert call_fingerprint({"a": 1, "b": 2, "ctx": ctx}) == call_fingerprint({"b": 2, "a": 1})
     assert call_fingerprint({"a": 1}) != call_fingerprint({"a": 2})
+
+
+# ===== a cached result belongs to one tool and one call =====
+
+@pytest.mark.asyncio
+async def test_another_tools_confirm_cannot_answer_from_a_cached_result(
+    provider, price_info, state_store
+):
+    """Paid tools share one store and one namespace, keyed by payment id alone,
+    so the result has to name the tool that produced it."""
+    from paymcp.payment.flows import two_step
+
+    ctx = FakeCtx()
+    confirms = {}
+
+    def mcp_for(name):
+        mcp = Mock()
+
+        def capture_tool(*args, **kwargs):
+            def decorator(f):
+                confirms[name] = f
+                return f
+            return decorator
+
+        mcp.tool = capture_tool
+        return mcp
+
+    tool_a = CountingTool()
+    tool_b = CountingTool(result={"from": "other_tool"})
+    tool_b.__name__ = "other_tool"
+
+    with patch.object(two_step, "get_ctx_from_server", return_value=ctx):
+        wrapper_a = two_step.make_paid_wrapper(
+            tool_a, mcp_for("a"), {"mock": provider}, price_info, state_store=state_store
+        )
+        two_step.make_paid_wrapper(
+            tool_b, mcp_for("b"), {"mock": provider}, price_info, state_store=state_store
+        )
+
+        await wrapper_a(secret="A-DATA")
+        ctx.drop()
+        assert _pending(await confirms["a"]("payment_123"))
+
+        # The other tool's confirm names the same payment id.
+        ctx.restore()
+        result = await confirms["b"]("payment_123")
+
+    # B answers for itself, after checking the payment - never with A's result.
+    assert result == {"from": "other_tool"}
+    assert tool_b.calls == 1
+    assert provider.get_payment_status.called
+
+
+@pytest.mark.asyncio
+async def test_peek_rejects_a_state_entry_that_is_not_a_cached_result(state_store):
+    """Payment state and cached results share the store; only the latter counts."""
+    from paymcp.payment.flows.state_utils import _result_key
+
+    await state_store.set(
+        _result_key(RESULT_NS_PAYMENT, "payment_1"),
+        {"payment_id": "payment_1", "payment_url": "https://payment.url"},
+    )
+
+    assert await peek_completed_result(
+        state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool"
+    ) == (False, None)
+
+
+@pytest.mark.asyncio
+async def test_clearing_keeps_a_result_cached_by_a_different_call(state_store):
+    """Session-keyed flows hold no lock, so a clear must not take out the result
+    another call cached under the same key in the meantime."""
+    mine = call_fingerprint({"text": "A"})
+    theirs = call_fingerprint({"text": "B"})
+
+    await save_completed_result(state_store, "k", {"theirs": True}, RESULT_NS_SESSION, "t", theirs)
+    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, "t", mine)
+
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs) == (
+        True,
+        {"theirs": True},
+    )
+
+    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs)
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs) == (False, None)
+
+
+@pytest.mark.asyncio
+async def test_fingerprint_covers_positional_arguments_and_never_raises():
+    class Angry:
+        def __repr__(self):
+            raise RuntimeError("nope")
+
+    assert call_fingerprint({}, ({"a": 1},)) != call_fingerprint({}, ({"a": 2},))
+    call_fingerprint({"x": Angry()})  # must not raise
