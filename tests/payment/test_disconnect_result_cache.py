@@ -395,7 +395,7 @@ async def test_helpers_tolerate_a_missing_store_or_key(state_store):
     assert await save_completed_result(None, "payment_1", {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is False
     assert await save_completed_result(state_store, None, {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is False
     assert await peek_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None, None)
-    await clear_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool")
+    await clear_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "a-token")
 
 
 @pytest.mark.asyncio
@@ -669,3 +669,17 @@ async def test_calls_that_cannot_be_fingerprinted_do_not_match_each_other():
     a = call_fingerprint({"x": Circular()})
     b = call_fingerprint({"x": Circular()})
     assert a != b
+
+
+@pytest.mark.asyncio
+async def test_clearing_without_a_token_keeps_an_entry_that_has_one(state_store):
+    """An entry nobody was handed is not ours to delete."""
+    await save_completed_result(state_store, "k", {"ok": True}, RESULT_NS_SESSION, "t")
+
+    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, None)
+
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t") == (
+        True,
+        {"ok": True},
+        ANY,
+    )

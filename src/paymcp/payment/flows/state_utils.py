@@ -104,7 +104,7 @@ async def save_completed_result(
         )
         return False
     except Exception as exc:
-        logger.warning("[PayMCP] Failed to cache tool result for %s: %s", key, exc)
+        logger.warning("[PayMCP] Failed to cache tool result for %s: %r", key, exc)
         return False
 
 
@@ -130,7 +130,7 @@ async def peek_completed_result(
     try:
         entry = await state_store.get(_result_key(namespace, str(key)))
     except Exception as exc:
-        logger.warning("[PayMCP] Failed to read cached tool result for %s: %s", key, exc)
+        logger.warning("[PayMCP] Failed to read cached tool result for %s: %r", key, exc)
         return False, None, None
 
     # Only a well-formed entry counts as a cached result: anything else means
@@ -170,6 +170,11 @@ async def clear_completed_result(
     another call can cache its own under the same key - including one for the
     very same arguments. Clearing by key alone would throw away a result
     someone has already paid for, so the entry has to be the same entry.
+
+    The check is read-then-delete, which the stores cannot do atomically: an
+    entry written between the two calls is still deleted. That window is one
+    round trip, where clearing by key alone left it open across the caller's
+    own awaits, but it is narrowed rather than closed.
     """
     if state_store is None or key is None:
         return
@@ -177,15 +182,14 @@ async def clear_completed_result(
     full_key = _result_key(namespace, str(key))
 
     try:
-        if token is not None:
-            entry = await state_store.get(full_key)
-            payload = entry.get("args") if isinstance(entry, Mapping) else None
-            stored = payload.get("token") if isinstance(payload, Mapping) else None
-            if stored != token:
-                logger.debug(
-                    "[PayMCP] Cached result for %s is no longer the one served; keeping it.", key
-                )
-                return
+        entry = await state_store.get(full_key)
+        payload = entry.get("args") if isinstance(entry, Mapping) else None
+        stored = payload.get("token") if isinstance(payload, Mapping) else None
+        if stored != token:
+            logger.debug(
+                "[PayMCP] Cached result for %s is no longer the one served; keeping it.", key
+            )
+            return
         await state_store.delete(full_key)
     except Exception as exc:
-        logger.warning("[PayMCP] Failed to clear cached tool result for %s: %s", key, exc)
+        logger.warning("[PayMCP] Failed to clear cached tool result for %s: %r", key, exc)
