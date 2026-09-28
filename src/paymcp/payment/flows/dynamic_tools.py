@@ -113,11 +113,13 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
         # Register confirmation tool
         @mcp.tool(**confirm_tool_args)
-        async def _confirm(ctx=None):
-            # FastMCP injects a context only into an annotated parameter, so this
-            # one arrives empty and every ctx-dependent branch below would be
-            # skipped. Resolve it from the server, the way two_step does.
-            if ctx is None and mcp is not None:
+        async def _confirm():
+            # No ctx parameter: FastMCP injects a context only into an annotated
+            # one, so an unannotated `ctx=None` is not filled in - it is just
+            # advertised to the model as an argument to guess at. Resolve the
+            # context from the server instead, the way two_step does.
+            ctx = None
+            if mcp is not None:
                 try:
                     ctx = get_ctx_from_server(mcp)
                 except Exception:

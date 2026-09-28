@@ -2,7 +2,12 @@ async def is_disconnected(ctx=None) -> bool:
     if ctx is None:
         return False
 
-    req = getattr(getattr(ctx, "request_context", None), "request", None)
+    # `request_context` can be a property that raises when no request is active,
+    # which getattr's default does not cover.
+    try:
+        req = getattr(getattr(ctx, "request_context", None), "request", None)
+    except Exception:
+        req = None
     if req and hasattr(req, "is_disconnected"):
         try:
             result = await req.is_disconnected()

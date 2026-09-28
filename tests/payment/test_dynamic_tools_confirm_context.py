@@ -6,6 +6,8 @@ branch is skipped - including the disconnect handling that keeps a paid result
 from being produced twice.
 """
 
+import inspect
+
 import pytest
 from unittest.mock import MagicMock, Mock
 
@@ -84,3 +86,33 @@ async def test_confirm_detects_a_disconnect_without_being_handed_a_context(clean
     ctx.request.dropped = False
     assert await confirm() == {"report": "result #1"}
     assert tool.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_tool_takes_no_arguments(clean_state):
+    """An unannotated `ctx` parameter is not filled in by FastMCP - it is just
+    advertised to the model as an argument to guess at, and a model that guesses
+    it puts the flow back on the path where no disconnect is ever detected."""
+    provider = Mock(spec=BasePaymentProvider)
+    provider.create_payment = Mock(return_value=("payment_123", "https://payment.url"))
+    provider.get_payment_status = Mock(return_value="paid")
+
+    registered = {}
+    mcp = MagicMock()
+    mcp.get_context = Mock(return_value=FakeCtx())
+
+    def tool_decorator(name=None, description=None, **kwargs):
+        def decorator(func):
+            registered[name] = func
+            return func
+        return decorator
+
+    mcp.tool = tool_decorator
+
+    wrapper = dynamic_tools.make_paid_wrapper(
+        CountingTool(), mcp, {"mock": provider}, {"price": 1.0, "currency": "USD"}
+    )
+    initiated = await wrapper(ctx=FakeCtx())
+
+    confirm = registered[initiated["next_tool"]]
+    assert list(inspect.signature(confirm).parameters) == []

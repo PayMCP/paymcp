@@ -325,16 +325,10 @@ def clean_dynamic_tools_state():
 async def test_dynamic_tools_retry_returns_result_without_re_executing(
     provider, price_info, clean_dynamic_tools_state
 ):
-    """The confirm tool is called here with an explicit ctx.
-
-    In production it does not get one: `_confirm(ctx=None)` carries no Context
-    annotation, so FastMCP never injects one and the disconnect handling never
-    runs. Resolving that context is a behaviour change for this flow and is
-    left to its own change; this covers the caching itself.
-    """
     tool = CountingTool()
     ctx = FakeCtx()
     mcp = MagicMock()
+    mcp.get_context = Mock(return_value=ctx)
     registered = {}
 
     def tool_decorator(name=None, description=None, **kwargs):
@@ -350,11 +344,11 @@ async def test_dynamic_tools_retry_returns_result_without_re_executing(
     confirm = registered[initiated["next_tool"]]
 
     ctx.drop()
-    assert _pending(await confirm(ctx=ctx))
+    assert _pending(await confirm())
     assert tool.calls == 1
 
     ctx.restore()
-    result = await confirm(ctx=ctx)
+    result = await confirm()
 
     assert result == {"report": "result #1"}
     assert tool.calls == 1
