@@ -1,9 +1,9 @@
 """The dynamic_tools confirm tool has to resolve its own context.
 
-`_confirm(ctx=None)` carries no Context annotation, so FastMCP never injects
-one: called the way the model calls it, ctx is None and every ctx-dependent
-branch is skipped - including the disconnect handling that keeps a paid result
-from being produced twice.
+The confirm tool takes no arguments, so there is nothing for FastMCP to inject
+a context into: it has to resolve one itself, or every ctx-dependent branch is
+skipped - including the disconnect handling that keeps a paid result from being
+produced twice.
 """
 
 import inspect
