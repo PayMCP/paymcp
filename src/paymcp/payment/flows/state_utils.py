@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import uuid
 from collections.abc import Mapping
 from typing import Any, Dict, Optional, Tuple
 
@@ -36,9 +37,13 @@ def _result_key(namespace: str, key: str) -> str:
     return f"paymcp:result:{namespace}:{key}"
 
 
-# Returned when a call cannot be fingerprinted at all. Two such calls never
-# match each other, so a result is simply not served from cache for them.
-_UNFINGERPRINTABLE = "unfingerprintable"
+def _unfingerprintable() -> str:
+    """A call that cannot be described gets a value unique to that call.
+
+    It must not be a constant: a constant would make every such call match
+    every other one, and they would be served each other's results.
+    """
+    return f"unfingerprintable:{uuid.uuid4().hex}"
 
 
 def call_fingerprint(
@@ -61,7 +66,7 @@ def call_fingerprint(
         try:
             canonical = repr(payload)
         except Exception:
-            return _UNFINGERPRINTABLE
+            return _unfingerprintable()
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -84,7 +89,7 @@ async def save_completed_result(
     if state_store is None or key is None:
         return False
 
-    payload = {"result": result, "tool": tool}
+    payload = {"result": result, "tool": tool, "token": uuid.uuid4().hex}
     if fingerprint is not None:
         payload["fingerprint"] = fingerprint
 
@@ -98,8 +103,8 @@ async def save_completed_result(
             "a retry will execute the tool again.", key
         )
         return False
-    except Exception:
-        logger.exception("[PayMCP] Failed to cache tool result for %s", key)
+    except Exception as exc:
+        logger.warning("[PayMCP] Failed to cache tool result for %s: %s", key, exc)
         return False
 
 
@@ -109,74 +114,78 @@ async def peek_completed_result(
     namespace: str,
     tool: str,
     fingerprint: Optional[str] = None,
-) -> Tuple[bool, Any]:
-    """Return (True, result) when a completed result is cached for this call.
+) -> Tuple[bool, Any, Optional[str]]:
+    """Return (True, result, token) when a completed result is cached for this call.
+
+    The token identifies the stored entry itself, so whoever hands the result
+    back can clear exactly what they served and nothing else.
 
     A payment id identifies a payment, not a tool, and every paid tool reads
     the same namespace - so the tool that produced the result has to match too,
     otherwise one tool would answer with another tool's output.
     """
     if state_store is None or key is None:
-        return False, None
+        return False, None, None
 
     try:
         entry = await state_store.get(_result_key(namespace, str(key)))
-    except Exception:
-        logger.exception("[PayMCP] Failed to read cached tool result for %s", key)
-        return False, None
+    except Exception as exc:
+        logger.warning("[PayMCP] Failed to read cached tool result for %s: %s", key, exc)
+        return False, None, None
 
     # Only a well-formed entry counts as a cached result: anything else means
     # there is nothing to hand back and the tool still has to run.
     if not isinstance(entry, Mapping):
-        return False, None
+        return False, None, None
 
     payload = entry.get("args")
     if not isinstance(payload, Mapping) or "result" not in payload:
-        return False, None
+        return False, None, None
 
     if payload.get("tool") != tool:
         logger.debug(
             "[PayMCP] Cached result for %s belongs to another tool; ignoring it.", key
         )
-        return False, None
+        return False, None, None
 
     if fingerprint is not None and payload.get("fingerprint") != fingerprint:
         logger.debug(
             "[PayMCP] Cached result for %s belongs to a different call; ignoring it.", key
         )
-        return False, None
+        return False, None, None
 
-    return True, payload["result"]
+    return True, payload["result"], payload.get("token")
 
 
 async def clear_completed_result(
     state_store,
     key: Any,
     namespace: str,
-    tool: Optional[str] = None,
-    fingerprint: Optional[str] = None,
+    token: Optional[str] = None,
 ) -> None:
-    """Drop a cached result, but only the one that was just handed back.
+    """Drop the cached result identified by `token`, and only that one.
 
     Session-keyed flows share one key across every call the session makes to a
     tool, and they hold no lock: between reading a result and clearing it,
-    another call can cache its own under the same key. Clearing blindly would
-    throw away a result someone has already paid for.
+    another call can cache its own under the same key - including one for the
+    very same arguments. Clearing by key alone would throw away a result
+    someone has already paid for, so the entry has to be the same entry.
     """
     if state_store is None or key is None:
         return
 
-    if tool is not None or fingerprint is not None:
-        still_ours, _ = await peek_completed_result(
-            state_store, key, namespace, tool, fingerprint
-        )
-        if not still_ours:
-            logger.debug(
-                "[PayMCP] Cached result for %s is no longer the one served; keeping it.", key
-            )
-            return
+    full_key = _result_key(namespace, str(key))
 
     try:
-        await state_store.delete(_result_key(namespace, str(key)))
-    except Exception:
-        logger.exception("[PayMCP] Failed to clear cached tool result for %s", key)
+        if token is not None:
+            entry = await state_store.get(full_key)
+            payload = entry.get("args") if isinstance(entry, Mapping) else None
+            stored = payload.get("token") if isinstance(payload, Mapping) else None
+            if stored != token:
+                logger.debug(
+                    "[PayMCP] Cached result for %s is no longer the one served; keeping it.", key
+                )
+                return
+        await state_store.delete(full_key)
+    except Exception as exc:
+        logger.warning("[PayMCP] Failed to clear cached tool result for %s: %s", key, exc)

@@ -57,7 +57,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         async with state_store.lock(str(payment_id)):
             # A previous confirm already ran the tool but the client dropped before
             # receiving the result: return the stored one rather than running again.
-            has_result, cached_result = await peek_completed_result(
+            has_result, cached_result, _ = await peek_completed_result(
                 state_store, payment_id, RESULT_NS_PAYMENT, func.__name__
             )
             if has_result:

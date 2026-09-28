@@ -9,7 +9,7 @@ import asyncio
 import json
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
 from paymcp.payment.flows import dynamic_tools
 from paymcp.payment.flows.state_utils import (
@@ -364,16 +364,19 @@ async def test_dynamic_tools_retry_returns_result_without_re_executing(
 
 @pytest.mark.asyncio
 async def test_peek_returns_nothing_when_no_result_was_stored(state_store):
-    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
+    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None, None)
 
 
 @pytest.mark.asyncio
 async def test_save_peek_and_clear_round_trip(state_store):
     assert await save_completed_result(state_store, "payment_1", {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is True
-    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (True, {"ok": True})
+    has_result, result, token = await peek_completed_result(
+        state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool"
+    )
+    assert (has_result, result) == (True, {"ok": True})
 
-    await clear_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool")
-    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
+    await clear_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, token)
+    assert await peek_completed_result(state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None, None)
 
 
 @pytest.mark.asyncio
@@ -384,14 +387,14 @@ async def test_save_reports_failure_when_the_store_refuses_the_result():
 
     store = RejectingStore()
     assert await save_completed_result(store, "payment_1", object(), RESULT_NS_PAYMENT, "expensive_tool") is False
-    assert await peek_completed_result(store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
+    assert await peek_completed_result(store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None, None)
 
 
 @pytest.mark.asyncio
 async def test_helpers_tolerate_a_missing_store_or_key(state_store):
     assert await save_completed_result(None, "payment_1", {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is False
     assert await save_completed_result(state_store, None, {"ok": True}, RESULT_NS_PAYMENT, "expensive_tool") is False
-    assert await peek_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None)
+    assert await peek_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool") == (False, None, None)
     await clear_completed_result(None, "payment_1", RESULT_NS_PAYMENT, "expensive_tool")
 
 
@@ -500,17 +503,18 @@ async def test_a_caller_supplied_payment_id_cannot_reach_a_session_keyed_result(
     assert await peek_completed_result(
         state_store, "expensive_tool:SESS1", RESULT_NS_SESSION, "expensive_tool",
         call_fingerprint({"text": "SECRET"}),
-    ) == (True, {"report": "result #1"})
+    ) == (True, {"report": "result #1"}, ANY)
 
 
 @pytest.mark.asyncio
 async def test_result_namespaces_do_not_overlap(state_store):
     await save_completed_result(state_store, "k", {"from": "session"}, RESULT_NS_SESSION, "t")
 
-    assert await peek_completed_result(state_store, "k", RESULT_NS_PAYMENT, "t") == (False, None)
+    assert await peek_completed_result(state_store, "k", RESULT_NS_PAYMENT, "t") == (False, None, None)
     assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t") == (
         True,
         {"from": "session"},
+        ANY,
     )
 
 
@@ -522,10 +526,11 @@ async def test_a_cached_result_is_only_served_to_a_matching_call(state_store):
     )
 
     other = call_fingerprint({"text": "B"})
-    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", other) == (False, None)
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", other) == (False, None, None)
     assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", fingerprint) == (
         True,
         {"ok": True},
+        ANY,
     )
 
 
@@ -599,26 +604,27 @@ async def test_peek_rejects_a_state_entry_that_is_not_a_cached_result(state_stor
 
     assert await peek_completed_result(
         state_store, "payment_1", RESULT_NS_PAYMENT, "expensive_tool"
-    ) == (False, None)
+    ) == (False, None, None)
 
 
 @pytest.mark.asyncio
 async def test_clearing_keeps_a_result_cached_by_a_different_call(state_store):
     """Session-keyed flows hold no lock, so a clear must not take out the result
     another call cached under the same key in the meantime."""
-    mine = call_fingerprint({"text": "A"})
     theirs = call_fingerprint({"text": "B"})
 
     await save_completed_result(state_store, "k", {"theirs": True}, RESULT_NS_SESSION, "t", theirs)
-    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, "t", mine)
+    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, "a-token-from-another-entry")
 
     assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs) == (
         True,
         {"theirs": True},
+        ANY,
     )
 
-    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs)
-    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs) == (False, None)
+    _, _, token = await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs)
+    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, token)
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", theirs) == (False, None, None)
 
 
 @pytest.mark.asyncio
@@ -629,3 +635,37 @@ async def test_fingerprint_covers_positional_arguments_and_never_raises():
 
     assert call_fingerprint({}, ({"a": 1},)) != call_fingerprint({}, ({"a": 2},))
     call_fingerprint({"x": Angry()})  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_clearing_keeps_a_result_cached_by_the_same_call_in_the_meantime(state_store):
+    """Two concurrent retries of the same call fingerprint alike, so matching on
+    the fingerprint is not enough to tell one stored entry from the next."""
+    fingerprint = call_fingerprint({"text": "A"})
+
+    await save_completed_result(state_store, "k", {"first": True}, RESULT_NS_SESSION, "t", fingerprint)
+    _, _, served = await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", fingerprint)
+
+    # another call for the same arguments caches its own result before we clear
+    await save_completed_result(state_store, "k", {"second": True}, RESULT_NS_SESSION, "t", fingerprint)
+    await clear_completed_result(state_store, "k", RESULT_NS_SESSION, served)
+
+    assert await peek_completed_result(state_store, "k", RESULT_NS_SESSION, "t", fingerprint) == (
+        True,
+        {"second": True},
+        ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_calls_that_cannot_be_fingerprinted_do_not_match_each_other():
+    class Circular:
+        def __init__(self):
+            self.me = self
+
+        def __repr__(self):
+            raise RuntimeError("no repr either")
+
+    a = call_fingerprint({"x": Circular()})
+    b = call_fingerprint({"x": Circular()})
+    assert a != b

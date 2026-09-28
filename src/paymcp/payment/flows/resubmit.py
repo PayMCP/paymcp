@@ -134,7 +134,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # The tool already ran for this payment but the client dropped before
             # receiving the result: hand back the stored one instead of charging
             # the server a second execution.
-            has_result, cached_result = await peek_completed_result(
+            has_result, cached_result, _ = await peek_completed_result(
                 state_store, existed_payment_id, RESULT_NS_PAYMENT, func.__name__
             )
             if has_result:

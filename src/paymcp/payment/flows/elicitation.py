@@ -59,7 +59,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         # this session makes to this tool, so the result is only served back to
         # the call that produced it.
         fingerprint = call_fingerprint(kwargs, args)
-        has_result, cached_result = await peek_completed_result(
+        has_result, cached_result, result_token = await peek_completed_result(
             state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
         )
         if has_result:
@@ -74,7 +74,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # so the result is dropped once delivered - otherwise the next
             # identical call would be served from cache instead of being paid for.
             await clear_completed_result(
-                state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
+                state_store, state_key, RESULT_NS_SESSION, result_token
             )
             await state_store.delete(state_key)
             return cached_result
