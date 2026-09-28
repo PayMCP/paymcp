@@ -5,7 +5,12 @@ import logging
 from ...utils.messages import open_link_message
 from ...utils.context import get_ctx_from_server
 from ...utils.disconnect import is_disconnected
-from .state_utils import sanitize_state_args
+from .state_utils import (
+    RESULT_NS_PAYMENT,
+    peek_completed_result,
+    sanitize_state_args,
+    save_completed_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +55,27 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             }
 
         async with state_store.lock(str(payment_id)):
+            # A previous confirm already ran the tool but the client dropped before
+            # receiving the result: return the stored one rather than running again.
+            has_result, cached_result, _ = await peek_completed_result(
+                state_store, payment_id, RESULT_NS_PAYMENT, func.__name__
+            )
+            if has_result:
+                if await is_disconnected(ctx):
+                    logger.warning("[confirm_tool] Still disconnected; keeping cached result for the next retry")
+                    return {
+                        "status": "pending",
+                        "message": "Connection aborted. Call the tool again to retrieve the result.",
+                        "payment_id": str(payment_id),
+                        "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
+                    }
+                logger.info(f"[confirm_tool] Returning cached result for payment_id={payment_id}")
+                # The payment is spent, but the result is kept until the store
+                # expires it: this hand-off can itself fail to reach the caller,
+                # and they have already paid for it.
+                await state_store.delete(str(payment_id))
+                return cached_result
+
             stored = await state_store.get(str(payment_id))
             logger.info(f"[confirm_tool] State retrieved: {stored is not None}")
             if not stored:
@@ -87,7 +113,10 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     pass
             result = await func(**call_args)
             if await is_disconnected(ctx):
-                logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
+                logger.warning("[confirm_tool] aborted after payment confirmation but before returning tool result.")
+                await save_completed_result(
+                    state_store, payment_id, result, RESULT_NS_PAYMENT, func.__name__
+                )
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",

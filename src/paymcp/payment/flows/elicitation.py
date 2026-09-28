@@ -5,6 +5,13 @@ from ...utils.disconnect import is_disconnected
 from ...utils.messages import open_link_message
 from ...utils.elicitation import run_elicitation_loop
 from ...utils.context import get_ctx_from_server, get_stable_session_id
+from .state_utils import (
+    RESULT_NS_SESSION,
+    call_fingerprint,
+    clear_completed_result,
+    peek_completed_result,
+    save_completed_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +52,32 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         payment_status = None
         message = None
         state_key = f"{func.__name__}:{session_id}"
+
+        # The tool already ran and was paid for, but the client dropped before
+        # receiving the result: return the stored one instead of asking for
+        # payment again or re-running the tool. The state key covers every call
+        # this session makes to this tool, so the result is only served back to
+        # the call that produced it.
+        fingerprint = call_fingerprint(kwargs, args)
+        has_result, cached_result, result_token = await peek_completed_result(
+            state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
+        )
+        if has_result:
+            if await is_disconnected(ctx):
+                logger.warning("[PAYMCP Elicitation] Still disconnected; keeping cached result for the next retry")
+                return {
+                    "status": "pending",
+                    "message": "Connection aborted. Call the tool again to retrieve the result.",
+                }
+            logger.info(f"[PAYMCP Elicitation] Returning cached result for state_key={state_key}")
+            # Unlike the payment-keyed flows, this key is reused by later calls,
+            # so the result is dropped once delivered - otherwise the next
+            # identical call would be served from cache instead of being paid for.
+            await clear_completed_result(
+                state_store, state_key, RESULT_NS_SESSION, result_token
+            )
+            await state_store.delete(state_key)
+            return cached_result
 
         logger.debug(f"[PAYMCP Elicitation] Checking for previous payments (state_key={state_key}) ")
         stored = await state_store.get(state_key)
@@ -95,6 +128,10 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             result = await func(*args,**kwargs) # calling original function
             if await is_disconnected(ctx):
                 logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
+                await save_completed_result(
+                    state_store, state_key, result, RESULT_NS_SESSION,
+                    func.__name__, fingerprint,
+                )
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",

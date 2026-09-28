@@ -1,5 +1,9 @@
 # Changelog
 
+# 0.9.1
+### Fixed
+- A paid tool no longer runs twice when the client disconnects before receiving the result. The result is stored on disconnect and returned on the retry, and only to the call that paid for it.
+
 # 0.9.0
 ### Breaking Changes
 - x402 v2 challenges now carry the resource description under `resource`, the field name the v2 `PaymentRequired` schema defines. It was previously emitted as `resourceInfo`, which is not an x402 field, so v2 clients never found it. Anyone reading the old key must switch.
