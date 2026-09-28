@@ -5,6 +5,8 @@ from typing import Optional
 from ...utils.messages import open_link_message
 from ...utils.disconnect import is_disconnected
 from .state_utils import (
+    RESULT_NS_SESSION,
+    call_fingerprint,
     clear_completed_result,
     peek_completed_result,
     save_completed_result,
@@ -68,15 +70,23 @@ def make_paid_wrapper(
 
         # The tool already ran and was paid for, but the client dropped before
         # receiving the result: return the stored one instead of polling for a
-        # new payment and running the tool again.
-        has_result, cached_result = await peek_completed_result(state_store, state_key)
+        # new payment and running the tool again. The state key covers every call
+        # this session makes to this tool, so the result is only served back to
+        # the call that produced it.
+        fingerprint = call_fingerprint(kwargs)
+        has_result, cached_result = await peek_completed_result(
+            state_store, state_key, RESULT_NS_SESSION, fingerprint
+        )
         if has_result:
             if await is_disconnected(ctx):
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",
                 }
-            await clear_completed_result(state_store, state_key)
+            # Unlike the payment-keyed flows, this key is reused by later calls,
+            # so the result is dropped once delivered - otherwise the next
+            # identical call would be served from cache instead of being paid for.
+            await clear_completed_result(state_store, state_key, RESULT_NS_SESSION)
             await state_store.delete(state_key)
             return cached_result
 
@@ -84,10 +94,8 @@ def make_paid_wrapper(
         if state_store is not None and state_key is not None:
             stored = await state_store.get(state_key)
             if stored:
-                # the store wraps the persisted payload under "args"
-                saved = stored.get("args") or {}
-                payment_id = saved.get("payment_id")
-                payment_url = saved.get("payment_url")
+                payment_id = stored.get("payment_id")
+                payment_url = stored.get("payment_url")
                 if payment_id and payment_url:
                     payment_status = provider.get_payment_status(payment_id)
                     if payment_status in ("paid", "pending"):
@@ -150,7 +158,9 @@ def make_paid_wrapper(
         # Call the underlying tool with its original args/kwargs
         result = await func(*args, **kwargs)
         if await is_disconnected(ctx):
-            await save_completed_result(state_store, state_key, result)
+            await save_completed_result(
+                state_store, state_key, result, RESULT_NS_SESSION, fingerprint
+            )
             return {
                 "status": "pending",
                 "message": "Connection aborted. Call the tool again to retrieve the result.",

@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 from pydantic import Field
 from ...utils.context import get_ctx_from_server
 from .state_utils import (
-    clear_completed_result,
+    RESULT_NS_PAYMENT,
     peek_completed_result,
     sanitize_state_args,
     save_completed_result,
@@ -134,7 +134,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # The tool already ran for this payment but the client dropped before
             # receiving the result: hand back the stored one instead of charging
             # the server a second execution.
-            has_result, cached_result = await peek_completed_result(state_store, existed_payment_id)
+            has_result, cached_result = await peek_completed_result(
+                state_store, existed_payment_id, RESULT_NS_PAYMENT
+            )
             if has_result:
                 if await is_disconnected(ctx):
                     logger.warning("[resubmit] Still disconnected; keeping cached result for the next retry")
@@ -145,7 +147,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                         "annotations": { "payment": { "status": "paid", "payment_id": str(existed_payment_id) } }
                     }
                 logger.info(f"[resubmit] Returning cached result for payment_id={existed_payment_id}")
-                await clear_completed_result(state_store, existed_payment_id)
+                # The payment is spent, but the result is kept until the store
+                # expires it: this hand-off can itself fail to reach the caller,
+                # and they have already paid for it.
                 await state_store.delete(existed_payment_id)
                 return cached_result
 
@@ -214,7 +218,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # and the result itself so the retry can fetch it without re-running the tool
             if await is_disconnected(ctx):
                 logger.warning("[resubmit] Disconnected after payment confirmation; returning pending result")
-                await save_completed_result(state_store, existed_payment_id, result)
+                await save_completed_result(
+                    state_store, existed_payment_id, result, RESULT_NS_PAYMENT
+                )
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",
