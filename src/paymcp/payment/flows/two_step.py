@@ -7,6 +7,7 @@ from ...utils.context import get_ctx_from_server
 from ...utils.disconnect import is_disconnected
 from .state_utils import (
     RESULT_NS_PAYMENT,
+    discard_spent_state,
     peek_completed_result,
     sanitize_state_args,
     save_completed_result,
@@ -73,7 +74,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                 # The payment is spent, but the result is kept until the store
                 # expires it: this hand-off can itself fail to reach the caller,
                 # and they have already paid for it.
-                await state_store.delete(str(payment_id))
+                await discard_spent_state(state_store, str(payment_id))
                 return cached_result
 
             stored = await state_store.get(str(payment_id))
@@ -123,7 +124,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     "payment_id": str(payment_id),
                     "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
                 }
-            await state_store.delete(str(payment_id))
+            await discard_spent_state(state_store, str(payment_id))
             logger.info(f"[confirm_tool] State deleted, executing tool")
             return result
 

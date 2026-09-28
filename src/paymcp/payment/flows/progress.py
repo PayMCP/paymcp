@@ -8,6 +8,7 @@ from .state_utils import (
     RESULT_NS_SESSION,
     call_fingerprint,
     clear_completed_result,
+    discard_spent_state,
     peek_completed_result,
     save_completed_result,
 )
@@ -89,7 +90,7 @@ def make_paid_wrapper(
             await clear_completed_result(
                 state_store, state_key, RESULT_NS_SESSION, result_token
             )
-            await state_store.delete(state_key)
+            await discard_spent_state(state_store, state_key)
             return cached_result
 
         # Try to restore existing payment for this session
@@ -171,8 +172,7 @@ def make_paid_wrapper(
                 "payment_url": payment_url,
                 "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
             }
-        if state_store is not None and state_key is not None:
-            await state_store.delete(state_key)
+        await discard_spent_state(state_store, state_key)
 
         return result
 

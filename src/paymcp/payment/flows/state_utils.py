@@ -193,3 +193,23 @@ async def clear_completed_result(
         await state_store.delete(full_key)
     except Exception as exc:
         logger.warning("[PayMCP] Failed to clear cached tool result for %s: %r", key, exc)
+
+
+async def discard_spent_state(state_store, key: Any) -> None:
+    """Remove state for a payment that has been spent, and carry on if it fails.
+
+    Used only past the point where the paid tool has already run. The caller
+    has been charged and the result is in hand; a store that cannot delete must
+    not turn that into an error, because the result would be lost with it. The
+    cost of carrying on is that the payment record survives and a later call may
+    reuse it - which is the better of the two outcomes, and worth a warning.
+    """
+    if state_store is None or key is None:
+        return
+    try:
+        await state_store.delete(key)
+    except Exception as exc:
+        logger.warning(
+            "[PayMCP] Failed to clear spent payment state for %s; a later call may "
+            "reuse it: %r", key, exc
+        )
