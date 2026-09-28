@@ -1,7 +1,9 @@
 """Tests for the two-step payment flow."""
 
+import inspect
+
 import pytest
-from unittest.mock import ANY, Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch
 from contextlib import asynccontextmanager
 from paymcp.payment.flows.two_step import make_paid_wrapper
 from paymcp.providers.base import BasePaymentProvider
@@ -33,10 +35,17 @@ class TestTwoStepFlow:
 
     @pytest.fixture
     def mock_func(self):
-        """Create a mock function to be wrapped."""
+        """Create a mock function to be wrapped.
+
+        The signature is set explicitly: `inspect.signature` of a bare
+        AsyncMock raises on Python 3.10 and reports `(*args, **kwargs)` on
+        3.11+, and the flow decides whether to pass `ctx` by inspecting it -
+        so without this the test asserts a different call per interpreter.
+        """
         func = AsyncMock()
         func.__name__ = "test_tool"
         func.return_value = {"result": "executed"}
+        func.__signature__ = inspect.signature(lambda original_arg=None: None)
         return func
 
     @pytest.fixture
@@ -131,9 +140,7 @@ class TestTwoStepFlow:
         mock_provider.get_payment_status.assert_called_once_with("payment_123")
 
         # Verify original function was called with stored args
-        # ctx is stripped before the args are stored and put back at confirm time,
-        # and this mock advertises **kwargs, so it is one of the arguments here.
-        mock_func.assert_called_once_with(original_arg="original_value", ctx=ANY)
+        mock_func.assert_called_once_with(original_arg="original_value")
 
         # Verify result
         assert result == {"result": "executed"}
