@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 class PaymentSession(NamedTuple):
     session_id: str  # Stable per-session identifier
     args: Dict[str, Any]
+    # Set once the paid tool has run but the client dropped before receiving the
+    # result, so a retry is answered from here instead of running the tool again.
+    has_result: bool = False
+    result: Any = None
 
 PAYMENTS: Dict[str, PaymentSession] = {}  # payment_id -> PaymentSession
 HIDDEN_TOOLS: Dict[str, Set[str]] = {}  # session_id -> {hidden_tool_names}
@@ -40,6 +44,20 @@ async def _send_notification(ctx):
         # Ignore notification failures - notifications are optional and client may not support them
         # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
         pass
+
+
+def _cleanup_payment(mcp, ps, pid: str, tool_name: str, confirm_name: str) -> None:
+    """Drop the payment session, unhide the paid tool and remove its confirm tool."""
+    PAYMENTS.pop(pid, None)
+
+    if ps.session_id in HIDDEN_TOOLS:
+        HIDDEN_TOOLS[ps.session_id].discard(tool_name)
+        if not HIDDEN_TOOLS[ps.session_id]:
+            del HIDDEN_TOOLS[ps.session_id]
+
+    if hasattr(mcp, '_tool_manager') and confirm_name in mcp._tool_manager._tools:
+        del mcp._tool_manager._tools[confirm_name]
+    CONFIRMATION_TOOLS.pop(confirm_name, None)
 
 
 def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
@@ -105,6 +123,21 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     "payment_id": pid
                 }
 
+            if ps.has_result:
+                if await is_disconnected(ctx):
+                    logger.warning("[dynamic_tools] Still disconnected; keeping cached result for the next retry")
+                    return {
+                        "status": "pending",
+                        "message": "Connection aborted. Call the tool again to retrieve the result.",
+                        "payment_id": pid,
+                        "payment_url": payment_url,
+                        "annotations": { "payment": { "status": "paid", "payment_id": pid } }
+                    }
+                logger.info(f"[dynamic_tools] Returning cached result for payment_id={pid}")
+                _cleanup_payment(mcp, ps, pid, tool_name, confirm_name)
+                await _send_notification(ctx)
+                return ps.result
+
             try:
                 status = provider.get_payment_status(payment_id)
                 if status != "paid":
@@ -120,6 +153,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
                 if await is_disconnected(ctx):
                     logger.warning("[dynamic_tools] Disconnected after payment confirmation; returning pending result")
+                    PAYMENTS[pid] = ps._replace(has_result=True, result=result)
                     return {
                         "status": "pending",
                         "message": "Connection aborted. Call the tool again to retrieve the result.",
@@ -128,18 +162,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                         "annotations": { "payment": { "status": "paid", "payment_id": pid } }
                     }
 
-                del PAYMENTS[pid]
-
-                # Cleanup hidden tools
-                if ps.session_id in HIDDEN_TOOLS:
-                    HIDDEN_TOOLS[ps.session_id].discard(tool_name)
-                    if not HIDDEN_TOOLS[ps.session_id]:
-                        del HIDDEN_TOOLS[ps.session_id]
-
-                # Remove confirmation tool
-                if hasattr(mcp, '_tool_manager') and confirm_name in mcp._tool_manager._tools:
-                    del mcp._tool_manager._tools[confirm_name]
-                CONFIRMATION_TOOLS.pop(confirm_name, None)
+                _cleanup_payment(mcp, ps, pid, tool_name, confirm_name)
 
                 await _send_notification(ctx)
                 return result

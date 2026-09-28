@@ -6,7 +6,12 @@ from inspect import Parameter
 from typing import Annotated, Optional
 from pydantic import Field
 from ...utils.context import get_ctx_from_server
-from .state_utils import sanitize_state_args
+from .state_utils import (
+    clear_completed_result,
+    peek_completed_result,
+    sanitize_state_args,
+    save_completed_result,
+)
 from ...utils.disconnect import is_disconnected
 
 logger = logging.getLogger(__name__)
@@ -57,8 +62,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
     """
     Resubmit payment flow .
 
-    Note: state_store parameter is accepted for signature consistency
-    but not used by RESUBMIT flow.
+    State is keyed by payment_id: the pending call's args, and - when the client
+    drops after a paid execution - the result, so a retry is served from state
+    instead of running the tool again.
     """
     provider = next(
         (v for k, v in providers.items() if k != "x402"),
@@ -125,6 +131,24 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         async with state_store.lock(existed_payment_id):
             logger.debug(f"[resubmit] Lock acquired for payment_id={existed_payment_id}")
 
+            # The tool already ran for this payment but the client dropped before
+            # receiving the result: hand back the stored one instead of charging
+            # the server a second execution.
+            has_result, cached_result = await peek_completed_result(state_store, existed_payment_id)
+            if has_result:
+                if await is_disconnected(ctx):
+                    logger.warning("[resubmit] Still disconnected; keeping cached result for the next retry")
+                    return {
+                        "status": "pending",
+                        "message": "Connection aborted. Call the tool again to retrieve the result.",
+                        "payment_id": str(existed_payment_id),
+                        "annotations": { "payment": { "status": "paid", "payment_id": str(existed_payment_id) } }
+                    }
+                logger.info(f"[resubmit] Returning cached result for payment_id={existed_payment_id}")
+                await clear_completed_result(state_store, existed_payment_id)
+                await state_store.delete(existed_payment_id)
+                return cached_result
+
             # Get state (don't delete yet)
             stored = await state_store.get(existed_payment_id)
             logger.info(f"[resubmit] State retrieved: {stored is not None}")
@@ -186,9 +210,11 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             # Execute tool (may fail - state not deleted yet)
             result = await func(*args, **kwargs)
 
-            # If client disconnected after payment but before sending result, keep state so they can retry fetch
+            # If client disconnected after payment but before sending result, keep state
+            # and the result itself so the retry can fetch it without re-running the tool
             if await is_disconnected(ctx):
                 logger.warning("[resubmit] Disconnected after payment confirmation; returning pending result")
+                await save_completed_result(state_store, existed_payment_id, result)
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",
