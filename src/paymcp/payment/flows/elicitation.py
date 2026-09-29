@@ -9,6 +9,7 @@ from .state_utils import (
     RESULT_NS_SESSION,
     call_fingerprint,
     clear_completed_result,
+    discard_payment_state,
     discard_spent_state,
     peek_completed_result,
     save_completed_result,
@@ -77,7 +78,9 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             await clear_completed_result(
                 state_store, state_key, RESULT_NS_SESSION, result_token
             )
-            await discard_spent_state(state_store, state_key)
+            # This call never looked at a payment record - it was answered from
+            # the cache - so it has no business deleting whatever is under the
+            # key now. The next successful call clears it, or the store expires it.
             return cached_result
 
         logger.debug(f"[PAYMCP Elicitation] Checking for previous payments (state_key={state_key}) ")
@@ -140,7 +143,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     "payment_url": payment_url,
                     "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
                 }
-            await discard_spent_state(state_store, state_key)
+            await discard_payment_state(state_store, state_key, payment_id)
             return result
 
         if (payment_status=="canceled"):
