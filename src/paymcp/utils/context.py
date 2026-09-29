@@ -1,6 +1,20 @@
 from typing import Any
 import uuid
 
+
+def read(obj: Any, name: str) -> Any:
+    """Read an attribute that may not merely be missing, but angry.
+
+    A FastMCP `Context` exposes `request_context` and `session` as properties
+    that raise when there is no active request, and `getattr`'s default only
+    covers AttributeError. Everything here is best-effort identification, so an
+    attribute we cannot read is the same as one that is not there.
+    """
+    try:
+        return getattr(obj, name, None)
+    except Exception:
+        return None
+
 def get_ctx_from_server(server: Any) -> Any:
     """
     Best-effort retrieval of a context-like object from the server.
@@ -24,15 +38,15 @@ def capture_client_from_ctx(ctx):
             "sessionId": None,
         }
 
-    session = getattr(ctx, "session", None)
-    client_params = getattr(session, "_client_params", None)
+    session = read(ctx, "session")
+    client_params = read(session, "_client_params")
 
     client_info = getattr(client_params, "clientInfo", None)
     capabilities = getattr(client_params, "capabilities", None)
 
-    request_context = getattr(ctx, "request_context", None) if ctx is not None else None
-    req = getattr(request_context, "request", None) if request_context is not None else None
-    headers = getattr(req, "headers", None) if req is not None else None
+    request_context = read(ctx, "request_context")
+    req = read(request_context, "request")
+    headers = read(req, "headers")
     session_id = headers.get("mcp-session-id") if headers else None
 
 
@@ -56,25 +70,25 @@ def get_stable_session_id(ctx: Any) -> str | None:
 
     # Prefer explicit identifiers from the SDK/runtime.
     for value in (
-        getattr(ctx, "client_id", None),
-        getattr(getattr(ctx, "session", None), "client_id", None),
-        getattr(getattr(ctx, "session", None), "id", None),
+        read(ctx, "client_id"),
+        read(read(ctx, "session"), "client_id"),
+        read(read(ctx, "session"), "id"),
     ):
         if value is not None and str(value):
             return str(value)
 
-    request_context = getattr(ctx, "request_context", None)
-    req = getattr(request_context, "request", None) if request_context is not None else None
-    headers = getattr(req, "headers", None) if req is not None else None
+    request_context = read(ctx, "request_context")
+    req = read(request_context, "request")
+    headers = read(req, "headers")
     header_sid = headers.get("mcp-session-id") if headers else None
     if header_sid:
         return str(header_sid)
 
     # Fallback: persist UUID on the session object, stable for that object lifetime.
-    session = getattr(ctx, "session", None)
+    session = read(ctx, "session")
     if session is None:
         return None
-    sid = getattr(session, "_paymcp_session_uuid", None)
+    sid = read(session, "_paymcp_session_uuid")
     if sid is None:
         sid = str(uuid.uuid4())
         try:
