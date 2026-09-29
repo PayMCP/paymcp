@@ -89,22 +89,57 @@ async def test_the_lock_is_released_and_dropped_when_the_body_raises():
 
 
 @pytest.mark.asyncio
-async def test_the_entry_survives_while_someone_is_waiting_on_it():
+async def test_a_caller_cancelled_while_waiting_leaves_nothing_behind():
+    """A client that disconnects mid-flight cancels a caller that is queueing.
+
+    That caller never reaches the body, so nothing else will account for it:
+    if it does not, the entry is stranded with a live user for the life of the
+    process, and nothing reclaims it.
+    """
     store = InMemoryStateStore()
     entered = asyncio.Event()
+    release = asyncio.Event()
 
     async def holder():
         async with store.lock("payment_1"):
             entered.set()
-            await asyncio.sleep(0.05)
+            await release.wait()
 
     held = asyncio.create_task(holder())
     await entered.wait()
-    waiting = asyncio.create_task(store.lock("payment_1").__aenter__())
 
+    async def waiter():
+        async with store.lock("payment_1"):
+            pass
+
+    queued = asyncio.create_task(waiter())
     await asyncio.sleep(0.01)
-    assert "payment_1" in store._payment_locks
-    assert store._payment_locks["payment_1"].users == 2
+    queued.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await queued
 
+    release.set()
     await held
-    await waiting
+
+    assert store._payment_locks == {}
+    # And the key is still usable afterwards.
+    async with store.lock("payment_1"):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_a_third_caller_still_waits_while_two_are_queued():
+    """The invariant behind the bookkeeping, without asserting on the counters."""
+    store = InMemoryStateStore()
+    counter = Counter()
+
+    first = asyncio.create_task(counter.hold(store, "payment_1", 0.04))
+    await asyncio.sleep(0.005)
+    second = asyncio.create_task(counter.hold(store, "payment_1", 0.04))
+    await asyncio.sleep(0.005)
+    third = asyncio.create_task(counter.hold(store, "payment_1", 0.04))
+
+    await asyncio.gather(first, second, third)
+
+    assert counter.peak == 1
+    assert store._payment_locks == {}

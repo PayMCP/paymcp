@@ -130,6 +130,21 @@ class InMemoryStateStore:
                 return None
             return entry
 
+    def _drop_entry(self, key: str, entry: _PaymentLock) -> None:
+        """Account for one caller leaving, and remove the entry if it is the last.
+
+        Deliberately synchronous. The whole update happens between suspension
+        points, so it cannot interleave with another caller and does not need
+        the registry lock - which matters, because taking that lock is itself a
+        point a cancelled task never gets past, and a caller that never
+        decrements strands the entry for the life of the process.
+        """
+        entry.users -= 1
+        # Drop the entry only when nobody else is on it, and only when it is
+        # still the entry this call was using.
+        if entry.users == 0 and self._payment_locks.get(key) is entry:
+            del self._payment_locks[key]
+
     @asynccontextmanager
     async def lock(self, key: str):
         """Acquire a per-payment-id lock to prevent concurrent access.
@@ -156,13 +171,16 @@ class InMemoryStateStore:
                 self._payment_locks[key] = entry
             entry.users += 1
 
-        async with entry.lock:
-            try:
-                yield
-            finally:
-                async with self._locks_lock:
-                    entry.users -= 1
-                    # Drop the entry only when nobody else is on it, and only
-                    # when it is still the entry this call was using.
-                    if entry.users == 0 and self._payment_locks.get(key) is entry:
-                        del self._payment_locks[key]
+        try:
+            await entry.lock.acquire()
+        except BaseException:
+            # Cancelled while queueing - a disconnecting client does this -
+            # and nobody else will account for this caller.
+            self._drop_entry(key, entry)
+            raise
+
+        try:
+            yield
+        finally:
+            entry.lock.release()
+            self._drop_entry(key, entry)
