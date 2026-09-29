@@ -8,6 +8,7 @@ from pydantic import Field
 from ...utils.context import get_ctx_from_server
 from .state_utils import (
     RESULT_NS_PAYMENT,
+    discard_spent_state,
     peek_completed_result,
     sanitize_state_args,
     save_completed_result,
@@ -150,7 +151,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                 # The payment is spent, but the result is kept until the store
                 # expires it: this hand-off can itself fail to reach the caller,
                 # and they have already paid for it.
-                await state_store.delete(existed_payment_id)
+                await discard_spent_state(state_store, existed_payment_id)
                 return cached_result
 
             # Get state (don't delete yet)
@@ -230,7 +231,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                 }
 
             # Tool succeeded - now delete state to enforce single-use
-            await state_store.delete(existed_payment_id)
+            await discard_spent_state(state_store, existed_payment_id)
             logger.info(f"[resubmit] Tool executed successfully, state deleted (single-use enforced)")
 
         # Return result without modifying it - don't change developer's original function return value
