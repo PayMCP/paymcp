@@ -1,8 +1,17 @@
 """In-memory state storage (default, backward compatible)."""
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 import time
 import asyncio
 from contextlib import asynccontextmanager
+
+
+@dataclass
+class _PaymentLock:
+    """A per-payment lock and the number of callers holding or waiting on it."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
 
 
 class InMemoryStateStore:
@@ -11,7 +20,7 @@ class InMemoryStateStore:
     def __init__(self, ttl: int = 3600, sweep_interval: int = 600):
         self._store: Dict[str, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
-        self._payment_locks: Dict[str, asyncio.Lock] = {}
+        self._payment_locks: Dict[str, _PaymentLock] = {}
         self._locks_lock = asyncio.Lock()
         self._ttl = ttl
         self._sweep_interval_ms = sweep_interval * 1000
@@ -121,6 +130,21 @@ class InMemoryStateStore:
                 return None
             return entry
 
+    def _drop_entry(self, key: str, entry: _PaymentLock) -> None:
+        """Account for one caller leaving, and remove the entry if it is the last.
+
+        Deliberately synchronous. The whole update happens between suspension
+        points, so it cannot interleave with another caller and does not need
+        the registry lock - which matters, because taking that lock is itself a
+        point a cancelled task never gets past, and a caller that never
+        decrements strands the entry for the life of the process.
+        """
+        entry.users -= 1
+        # Drop the entry only when nobody else is on it, and only when it is
+        # still the entry this call was using.
+        if entry.users == 0 and self._payment_locks.get(key) is entry:
+            del self._payment_locks[key]
+
     @asynccontextmanager
     async def lock(self, key: str):
         """Acquire a per-payment-id lock to prevent concurrent access.
@@ -135,18 +159,28 @@ class InMemoryStateStore:
                 # ... process payment ...
                 await state_store.delete(payment_id)
         """
-        # Get or create lock for this payment_id
+        # Register as a user of the entry before releasing the registry lock.
+        # Otherwise the caller holding it could finish and discard the entry
+        # while this one is still queueing on it, and the next arrival would
+        # build a second lock for the same key and run alongside whoever is
+        # queued on the first - which is no lock at all.
         async with self._locks_lock:
-            if key not in self._payment_locks:
-                self._payment_locks[key] = asyncio.Lock()
-            payment_lock = self._payment_locks[key]
+            entry = self._payment_locks.get(key)
+            if entry is None:
+                entry = _PaymentLock()
+                self._payment_locks[key] = entry
+            entry.users += 1
 
-        # Acquire the payment-specific lock
-        async with payment_lock:
-            try:
-                yield
-            finally:
-                # Cleanup lock after use
-                async with self._locks_lock:
-                    if key in self._payment_locks:
-                        del self._payment_locks[key]
+        try:
+            await entry.lock.acquire()
+        except BaseException:
+            # Cancelled while queueing - a disconnecting client does this -
+            # and nobody else will account for this caller.
+            self._drop_entry(key, entry)
+            raise
+
+        try:
+            yield
+        finally:
+            entry.lock.release()
+            self._drop_entry(key, entry)
