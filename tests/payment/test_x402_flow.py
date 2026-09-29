@@ -671,3 +671,53 @@ async def test_x402_v1_requires_session_id(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Session ID is not found"):
         await wrapper(ctx=ctx)
+
+
+@pytest.mark.asyncio
+async def test_x402_runs_the_tool_when_the_settled_challenge_cannot_be_deleted():
+    """The provider settles inside get_payment_status, so by the time the
+    challenge is discarded the money has moved. A store that cannot delete must
+    not stop the tool from running - the caller has paid, and a retry would
+    attempt a second settlement."""
+    payment_data = {
+        "x402Version": 2,
+        "accepts": [
+            {
+                "amount": "100",
+                "network": "eip155:8453",
+                "asset": "USDC",
+                "payTo": "0xabc",
+                "extra": {"challengeId": "cid-123"},
+            }
+        ],
+    }
+    sig = _build_sig(payment_data)
+
+    provider = Mock()
+    provider.get_payment_status = Mock(return_value="paid")
+
+    state_store = AsyncMock()
+    state_store.get = AsyncMock(return_value={"args": {"paymentData": payment_data}})
+    state_store.delete = AsyncMock(side_effect=ConnectionError("state store unreachable"))
+
+    calls = []
+
+    async def tool(**_kwargs):
+        calls.append(1)
+        return "ok"
+
+    ctx = DummyCtx(
+        request_context=DummyRequestContext(request=DummyRequest({}), meta={"x402/payment": sig}),
+        session=DummySession(),
+    )
+
+    wrapper = make_paid_wrapper(
+        func=tool,
+        mcp=None,
+        providers={"x402": provider},
+        price_info={"price": 1.0, "currency": "USD"},
+        state_store=state_store,
+    )
+
+    assert await wrapper(ctx=ctx) == "ok"
+    assert calls == [1]

@@ -6,6 +6,7 @@ import logging
 from urllib.parse import quote
 from typing import Any, Dict, Optional
 from ...utils.context import get_ctx_from_server, capture_client_from_ctx
+from .state_utils import discard_spent_state
 
 
 
@@ -281,7 +282,12 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             raise RuntimeError("Payment failed")
 
         if payment_status == "paid":
-            await state_store.delete(str(challenge_id))
+            # The provider settles inside get_payment_status, so the money has
+            # already moved by the time we get here. A store that cannot delete
+            # must not stop the tool from running: the caller has paid, and the
+            # retry would go back through get_payment_status and attempt a
+            # second settlement.
+            await discard_spent_state(state_store, str(challenge_id))
             return await func(*args, **kwargs)
 
         raise RuntimeError(

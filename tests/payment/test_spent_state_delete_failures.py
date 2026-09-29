@@ -160,23 +160,30 @@ async def test_a_payment_that_could_not_be_cleared_stays_reusable(provider, pric
 
 
 @pytest.mark.asyncio
-async def test_a_delete_before_the_tool_runs_still_reports_its_failure(provider, price_info):
-    """Only the deletes past a paid execution are forgiving.
+async def test_a_delete_before_anything_is_charged_still_reports_its_failure(
+    provider, price_info
+):
+    """Only the deletes past a charge are forgiving.
 
-    A failure before the tool has run costs nothing but the call, and hiding it
-    would leave the caller with a payment the flow silently gave up on.
+    Discarding a stale, unpaid payment costs nothing but the call, and hiding a
+    store failure there would leave the caller believing a fresh payment was
+    created. The assertion is on the store's own error type, so routing this
+    delete through the forgiving helper makes the test fail.
     """
-    from paymcp.payment.flows import progress
+    from paymcp.payment.flows import elicitation
 
     store = FailsToDelete()
     tool = CountingTool()
+
+    # A payment from an earlier call that the provider now reports as dead.
+    await store.set("expensive_tool:session-1", {"payment_id": "old", "payment_url": "u"})
     provider.get_payment_status = Mock(return_value="canceled")
 
-    with patch.object(progress.asyncio, "sleep", AsyncMock()):
-        wrapper = progress.make_paid_wrapper(
+    with patch.object(elicitation, "run_elicitation_loop", AsyncMock(return_value="paid")):
+        wrapper = elicitation.make_paid_wrapper(
             tool, Mock(), {"mock": provider}, price_info, state_store=store
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ConnectionError):
             await wrapper(ctx=FakeCtx())
 
     assert tool.calls == 0

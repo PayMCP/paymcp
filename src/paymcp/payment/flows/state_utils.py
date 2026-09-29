@@ -198,11 +198,14 @@ async def clear_completed_result(
 async def discard_spent_state(state_store, key: Any) -> None:
     """Remove state for a payment that has been spent, and carry on if it fails.
 
-    Used only past the point where the paid tool has already run. The caller
-    has been charged and the result is in hand; a store that cannot delete must
-    not turn that into an error, because the result would be lost with it. The
-    cost of carrying on is that the payment record survives and a later call may
-    reuse it - which is the better of the two outcomes, and worth a warning.
+    Used only past the point where the caller has been charged - after the paid
+    tool has run, or, in the x402 flow, after settlement. A store that cannot
+    delete must not turn that into an error: the result would be lost with it,
+    and the caller has already paid.
+
+    The cost of carrying on is that the payment record survives, so every call
+    until the store expires it runs the tool for free - not only the next one.
+    That is still the better of the two outcomes, and worth a warning.
     """
     if state_store is None or key is None:
         return
