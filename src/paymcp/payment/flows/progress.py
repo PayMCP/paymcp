@@ -8,6 +8,7 @@ from .state_utils import (
     RESULT_NS_SESSION,
     call_fingerprint,
     clear_completed_result,
+    discard_payment_state,
     discard_spent_state,
     peek_completed_result,
     save_completed_result,
@@ -90,7 +91,8 @@ def make_paid_wrapper(
             await clear_completed_result(
                 state_store, state_key, RESULT_NS_SESSION, result_token
             )
-            await discard_spent_state(state_store, state_key)
+            # Answered from the cache: this call never held a payment record,
+            # so it does not get to remove one.
             return cached_result
 
         # Try to restore existing payment for this session
@@ -161,10 +163,14 @@ def make_paid_wrapper(
         # Call the underlying tool with its original args/kwargs
         result = await func(*args, **kwargs)
         if await is_disconnected(ctx):
-            await save_completed_result(
+            saved = await save_completed_result(
                 state_store, state_key, result, RESULT_NS_SESSION,
                 func.__name__, fingerprint,
             )
+            # Only when the result is stored: otherwise the retry must run
+            # the tool again, and it needs this payment to run on.
+            if saved:
+                await discard_payment_state(state_store, state_key, payment_id)
             return {
                 "status": "pending",
                 "message": "Connection aborted. Call the tool again to retrieve the result.",
@@ -172,7 +178,7 @@ def make_paid_wrapper(
                 "payment_url": payment_url,
                 "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
             }
-        await discard_spent_state(state_store, state_key)
+        await discard_payment_state(state_store, state_key, payment_id)
 
         return result
 

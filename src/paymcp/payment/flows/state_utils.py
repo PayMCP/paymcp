@@ -216,3 +216,42 @@ async def discard_spent_state(state_store, key: Any) -> None:
             "[PayMCP] Failed to clear spent payment state for %s; a later call may "
             "reuse it: %r", key, exc
         )
+
+
+async def discard_payment_state(state_store, key: Any, payment_id: Any = None) -> None:
+    """Remove a session's payment record, but only the one this call was using.
+
+    Session-keyed flows file every call a session makes to a tool under one
+    key, and they hold no lock. A concurrent call can replace the record
+    between the moment this one read it and the moment it cleans up, and
+    deleting by key alone throws away a payment the caller may already have
+    made - leaving them to be asked for a second one.
+
+    `payment_id` is what this call worked with. Passing nothing means the call
+    never looked at a payment record, and then there is nothing here it can
+    claim to be finished with, so nothing is removed.
+    """
+    if state_store is None or key is None or payment_id is None:
+        return
+
+    try:
+        entry = await state_store.get(key)
+        # The bundled stores wrap under "args"; a hand-written one may not.
+        payload = entry.get("args") if isinstance(entry, Mapping) else None
+        if payload is None and isinstance(entry, Mapping) and "args" not in entry:
+            # Only with no "args" at all, so an envelope carrying its own
+            # payment_id cannot stand in for the payload.
+            payload = entry
+        current = payload.get("payment_id") if isinstance(payload, Mapping) else None
+        if str(current) != str(payment_id):
+            logger.debug(
+                "[PayMCP] The payment under %s is no longer the one this call used; leaving it.",
+                key,
+            )
+            return
+        await state_store.delete(key)
+    except Exception as exc:
+        logger.warning(
+            "[PayMCP] Failed to clear spent payment state for %s; a later call may "
+            "reuse it: %r", key, exc
+        )

@@ -187,3 +187,65 @@ async def test_a_delete_before_anything_is_charged_still_reports_its_failure(
             await wrapper(ctx=FakeCtx())
 
     assert tool.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_a_call_does_not_delete_a_payment_another_call_just_filed():
+    """Session-keyed flows file every call under one key and hold no lock.
+
+    Deleting by key alone throws away a payment a concurrent call may already
+    have sent the user to make, and they are then asked for a second one.
+    """
+    from paymcp.payment.flows.state_utils import discard_payment_state
+
+    store = InMemoryStateStore()
+    key = "expensive_tool:session-1"
+
+    await store.set(key, {"payment_id": "mine", "payment_url": "u"})
+    # A concurrent call replaces it with its own before we clean up.
+    await store.set(key, {"payment_id": "theirs", "payment_url": "u"})
+
+    await discard_payment_state(store, key, "mine")
+
+    surviving = await store.get(key)
+    assert surviving is not None, "the other call's payment was deleted"
+    assert surviving["args"]["payment_id"] == "theirs"
+
+    await discard_payment_state(store, key, "theirs")
+    assert await store.get(key) is None
+
+
+@pytest.mark.asyncio
+async def test_a_call_with_no_payment_of_its_own_deletes_nothing():
+    """The cached-result path never read a payment record, so it has no claim
+    on whatever is under the key by the time it finishes."""
+    from paymcp.payment.flows.state_utils import discard_payment_state
+
+    store = InMemoryStateStore()
+    key = "expensive_tool:session-1"
+    await store.set(key, {"payment_id": "someone-elses"})
+
+    await discard_payment_state(store, key, None)
+
+    assert await store.get(key) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_store_that_does_not_wrap_its_payload_is_still_cleaned():
+    """`state_store` is an advertised extension point, and a hand-written one
+    need not copy the bundled stores' envelope. Not recognising its shape would
+    leave the record behind for ever, and every later call would run free."""
+    from paymcp.payment.flows.state_utils import discard_payment_state
+
+    class PlainStore(InMemoryStateStore):
+        async def get(self, key):
+            entry = await super().get(key)
+            return entry["args"] if entry else None
+
+    store = PlainStore()
+    key = "expensive_tool:session-1"
+    await store.set(key, {"payment_id": "mine"})
+
+    await discard_payment_state(store, key, "mine")
+
+    assert await store.get(key) is None, "the record was not recognised and stayed"

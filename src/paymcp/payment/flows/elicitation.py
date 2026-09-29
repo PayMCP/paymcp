@@ -9,6 +9,7 @@ from .state_utils import (
     RESULT_NS_SESSION,
     call_fingerprint,
     clear_completed_result,
+    discard_payment_state,
     discard_spent_state,
     peek_completed_result,
     save_completed_result,
@@ -77,13 +78,17 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             await clear_completed_result(
                 state_store, state_key, RESULT_NS_SESSION, result_token
             )
-            await discard_spent_state(state_store, state_key)
+            # Answered from the cache: this call never held a payment record,
+            # so it does not get to remove one.
             return cached_result
 
         logger.debug(f"[PAYMCP Elicitation] Checking for previous payments (state_key={state_key}) ")
         stored = await state_store.get(state_key)
         if stored:
-            payment=stored.get("args")
+            # The bundled stores wrap under "args"; a hand-written one may not.
+            payment = stored.get("args")
+            if payment is None and "args" not in stored:
+                payment = stored
             payment_id = payment.get("payment_id")
             payment_url = payment.get("payment_url")
             if payment_id and payment_url:
@@ -129,10 +134,14 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             result = await func(*args,**kwargs) # calling original function
             if await is_disconnected(ctx):
                 logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
-                await save_completed_result(
+                saved = await save_completed_result(
                     state_store, state_key, result, RESULT_NS_SESSION,
                     func.__name__, fingerprint,
                 )
+                # Only when the result is stored: otherwise the retry must
+                # run the tool again, and it needs this payment to run on.
+                if saved:
+                    await discard_payment_state(state_store, state_key, payment_id)
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",
@@ -140,7 +149,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     "payment_url": payment_url,
                     "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
                 }
-            await discard_spent_state(state_store, state_key)
+            await discard_payment_state(state_store, state_key, payment_id)
             return result
 
         if (payment_status=="canceled"):
