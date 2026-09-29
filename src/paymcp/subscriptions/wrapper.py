@@ -6,7 +6,7 @@ import functools
 import inspect
 from typing import Any, Dict, List, Optional, Tuple, Callable, Awaitable
 from ..utils.jwt import parse_jwt_paylod
-from ..utils.context import get_ctx_from_server
+from ..utils.context import get_ctx_from_server, read
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -66,15 +66,15 @@ def _get_bearer_token_from_ctx(ctx: Any, log: logging.Logger) -> Optional[str]:
     if ctx is None:
         return None
 
-    request_context = getattr(ctx, "request_context", None)
+    request_context = read(ctx, "request_context")
     if request_context is None:
         return None
 
-    req = getattr(request_context, "request", None)
+    req = read(request_context, "request")
     if req is None:
         return None
 
-    headers = getattr(req, "headers", None)
+    headers = read(req, "headers")
     if headers is None:
         return None
 
@@ -125,7 +125,7 @@ def _extract_auth_identity(ctx: Any, tool_name: str, log: logging.Logger) -> Tup
         )
 
     # 2) Try to read authInfo from ctx.request_context (attribute or dict)
-    request_context = getattr(ctx, "request_context", None) if ctx is not None else None
+    request_context = read(ctx, "request_context")
     if auth_info is None and request_context is not None:
         auth_info = _safe_get(request_context, "authInfo", "auth_info", "AuthInfo")
         if auth_info is None and isinstance(request_context, dict):
@@ -137,7 +137,7 @@ def _extract_auth_identity(ctx: Any, tool_name: str, log: logging.Logger) -> Tup
 
     # 3) Try to read authInfo from ctx.request_context.meta (attribute or dict)
     if auth_info is None and request_context is not None:
-        meta = getattr(request_context, "meta", None)
+        meta = read(request_context, "meta")
         if meta is not None:
             if isinstance(meta, dict):
                 auth_info = (

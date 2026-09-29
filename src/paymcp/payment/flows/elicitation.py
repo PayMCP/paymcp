@@ -136,6 +136,11 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     state_store, state_key, result, RESULT_NS_SESSION,
                     func.__name__, fingerprint,
                 )
+                # The payment is spent on this execution, and this is the last
+                # moment we know which payment that is: the retry is answered
+                # from the cache and never looks at the record. Leaving it here
+                # would let the next call find a paid payment and run free.
+                await discard_payment_state(state_store, state_key, payment_id)
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",

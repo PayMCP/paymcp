@@ -18,10 +18,13 @@ from ...utils.disconnect import is_disconnected
 logger = logging.getLogger(__name__)
 
 # State: payment_id -> (session_id, args)
-# How long an abandoned payment is kept before the registries are swept. It is
-# the window a caller has to come back for a result they paid for, so it is
-# generous rather than tight; the clock restarts when a result is stored.
-ABANDONED_PAYMENT_TTL_SECONDS = 600
+# How long an abandoned payment is kept before the registries are swept. This
+# has to sit above the longest a payment can legitimately take - PROGRESS alone
+# waits fifteen minutes for one - or a slow payer loses the purchase they are in
+# the middle of making. An hour matches what the state stores keep. The clock
+# restarts when a result is stored, so a caller who dropped gets the full window
+# to come back for it.
+ABANDONED_PAYMENT_TTL_SECONDS = 3600
 
 
 class PaymentSession(NamedTuple):
@@ -29,6 +32,11 @@ class PaymentSession(NamedTuple):
     args: Dict[str, Any]
     # When this session was last touched, for the sweeper below.
     ts: float = 0.0
+    # What the sweep needs to undo, kept rather than reconstructed: recovering
+    # them from the confirm tool's name means matching on the payment id, and a
+    # shorter id is a suffix of a longer one.
+    tool_name: str = ""
+    confirm_name: str = ""
     # Set once the paid tool has run but the client dropped before receiving the
     # result, so a retry is answered from here instead of running the tool again.
     has_result: bool = False
@@ -66,15 +74,10 @@ def _sweep_abandoned(mcp) -> None:
     answer "unknown", leaving the caller unable to retry or to start again.
     """
     cutoff = time.time() - ABANDONED_PAYMENT_TTL_SECONDS
-    for pid, session in [(pid, s) for pid, s in PAYMENTS.items() if s.ts and s.ts < cutoff]:
-        confirm_name = next(
-            (name for name, sid in CONFIRMATION_TOOLS.items()
-             if sid == session.session_id and name.endswith(pid)),
-            None,
-        )
-        tool_name = confirm_name.split("confirm_", 1)[-1][: -len(pid) - 1] if confirm_name else None
+    stale = [(pid, s) for pid, s in PAYMENTS.items() if s.ts and s.ts < cutoff]
+    for pid, session in stale:
         logger.info("[DYNAMIC_TOOLS] Sweeping abandoned payment %s", pid)
-        _cleanup_payment(mcp, session, pid, tool_name, confirm_name or "")
+        _cleanup_payment(mcp, session, pid, session.tool_name, session.confirm_name)
 
 
 def _cleanup_payment(mcp, ps, pid: str, tool_name: str, confirm_name: str) -> None:
@@ -128,7 +131,10 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
         # Store state: payment session, hide tool, track confirm tool
         _sweep_abandoned(mcp)
-        PAYMENTS[pid] = PaymentSession(session_id, kwargs, ts=time.time())
+        PAYMENTS[pid] = PaymentSession(
+            session_id, kwargs, ts=time.time(),
+            tool_name=tool_name, confirm_name=confirm_name,
+        )
         HIDDEN_TOOLS.setdefault(session_id, set()).add(tool_name)
         CONFIRMATION_TOOLS[confirm_name] = session_id
 

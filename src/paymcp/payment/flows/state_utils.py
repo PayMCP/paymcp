@@ -236,8 +236,14 @@ async def discard_payment_state(state_store, key: Any, payment_id: Any = None) -
 
     try:
         entry = await state_store.get(key)
-        stored = entry.get("args") if isinstance(entry, Mapping) else None
-        current = stored.get("payment_id") if isinstance(stored, Mapping) else None
+        # The bundled stores wrap what they were given under "args"; a
+        # hand-written one may hand back the payload itself, and `state_store`
+        # is an advertised extension point. Accept either rather than silently
+        # never matching - which would leave the record behind for ever.
+        payload = entry.get("args") if isinstance(entry, Mapping) else None
+        if not isinstance(payload, Mapping):
+            payload = entry if isinstance(entry, Mapping) else None
+        current = payload.get("payment_id") if isinstance(payload, Mapping) else None
         if str(current) != str(payment_id):
             logger.debug(
                 "[PayMCP] The payment under %s is no longer the one this call used; leaving it.",

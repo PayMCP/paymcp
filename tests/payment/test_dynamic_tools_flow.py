@@ -720,3 +720,52 @@ async def test_an_abandoned_payment_is_swept_with_everything_hanging_off_it(
     assert initiated["next_tool"] not in flow.CONFIRMATION_TOOLS, (
         "a dead confirm tool is still registered"
     )
+
+
+@pytest.mark.asyncio
+async def test_sweeping_one_payment_leaves_another_in_the_same_session_alone(
+    mock_mcp, mock_provider, price_info
+):
+    """Two payments in one session, where one id is a suffix of the other.
+
+    The sweep used to find the confirm tool by matching the end of its name, so
+    the shorter id matched the longer one's tool and took it down - leaving a
+    live payment with no way to confirm it.
+    """
+    import time as _time
+    from paymcp.payment.flows import dynamic_tools as flow
+
+    async def alpha(**kwargs):
+        return {"result": "a"}
+
+    async def beta(**kwargs):
+        return {"result": "b"}
+
+    alpha.__name__, beta.__name__ = "alpha", "beta"
+
+    mock_mcp._tool_manager = MagicMock()
+    mock_mcp._tool_manager._tools = {}
+    mock_mcp.get_context.return_value = Mock(client_id="sess-suffix")
+    ctx = Mock(client_id="sess-suffix")
+
+    mock_provider.create_payment = Mock(return_value=("pay_9f21", "https://u"))
+    fresh = await make_paid_wrapper(alpha, mock_mcp, {"mock": mock_provider}, price_info)(ctx=ctx)
+
+    mock_provider.create_payment = Mock(return_value=("pay_21", "https://u"))
+    stale = await make_paid_wrapper(beta, mock_mcp, {"mock": mock_provider}, price_info)(ctx=ctx)
+
+    # Only the second one is abandoned.
+    session = flow.PAYMENTS["pay_21"]
+    flow.PAYMENTS["pay_21"] = session._replace(
+        ts=_time.time() - flow.ABANDONED_PAYMENT_TTL_SECONDS - 1
+    )
+    flow._sweep_abandoned(mock_mcp)
+
+    assert "pay_9f21" in flow.PAYMENTS, "the live payment was swept"
+    assert fresh["next_tool"] in flow.CONFIRMATION_TOOLS, (
+        "the live payment's confirm tool was removed with the abandoned one"
+    )
+    assert "alpha" in flow.HIDDEN_TOOLS.get("sess-suffix", set()), (
+        "the live payment's tool was unhidden"
+    )
+    assert stale["next_tool"] not in flow.CONFIRMATION_TOOLS

@@ -491,9 +491,10 @@ async def test_a_caller_supplied_payment_id_cannot_reach_a_session_keyed_result(
     with pytest.raises(RuntimeError):
         await wrapper(ctx=FakeCtx("SESS9"), payment_id="expensive_tool:SESS1")
 
-    # No result handed out, nothing executed, and the victim's state untouched.
+    # No result handed out, nothing executed, and the victim's cached result
+    # untouched. Their payment record is gone by design: it was spent on the
+    # execution that produced the result, and cleared when that was stored.
     assert other_tool.calls == 0
-    assert await state_store.get("expensive_tool:SESS1") is not None
     assert await peek_completed_result(
         state_store, "expensive_tool:SESS1", RESULT_NS_SESSION, "expensive_tool",
         call_fingerprint({"text": "SECRET"}),
@@ -677,3 +678,36 @@ async def test_clearing_without_a_token_keeps_an_entry_that_has_one(state_store)
         {"ok": True},
         ANY,
     )
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_call_does_not_leave_a_payment_behind_for_a_free_run(
+    provider, price_info, state_store
+):
+    """The retry is answered from the cache and never looks at the payment, so
+    the record has to be cleared where the disconnect happens. Left behind, the
+    next call finds a paid payment and runs the tool without asking for money."""
+    from paymcp.payment.flows import elicitation
+
+    tool = CountingTool()
+    ctx = FakeCtx()
+
+    with patch.object(elicitation, "run_elicitation_loop", AsyncMock(return_value="paid")) as loop:
+        wrapper = elicitation.make_paid_wrapper(
+            tool, Mock(), {"mock": provider}, price_info, state_store=state_store
+        )
+
+        ctx.drop()
+        assert _pending(await wrapper(ctx=ctx, text="A"))
+
+        ctx.restore()
+        assert await wrapper(ctx=ctx, text="A") == {"report": "result #1"}
+
+        # A genuinely new call must be paid for, not waved through on the
+        # payment the dropped one already spent.
+        await wrapper(ctx=ctx, text="B")
+
+    assert provider.create_payment.call_count == 2, (
+        "the second call reused the payment the first one had already spent"
+    )
+    assert loop.await_count == 2, "the user was not asked to pay for the second call"

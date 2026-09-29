@@ -1,5 +1,8 @@
+import logging
 from typing import Any
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 def read(obj: Any, name: str) -> Any:
@@ -13,6 +16,7 @@ def read(obj: Any, name: str) -> Any:
     try:
         return getattr(obj, name, None)
     except Exception:
+        logger.debug("[PayMCP] Could not read %r off %r", name, type(obj).__name__, exc_info=True)
         return None
 
 def get_ctx_from_server(server: Any) -> Any:
@@ -41,8 +45,8 @@ def capture_client_from_ctx(ctx):
     session = read(ctx, "session")
     client_params = read(session, "_client_params")
 
-    client_info = getattr(client_params, "clientInfo", None)
-    capabilities = getattr(client_params, "capabilities", None)
+    client_info = read(client_params, "clientInfo")
+    capabilities = read(client_params, "capabilities")
 
     request_context = read(ctx, "request_context")
     req = read(request_context, "request")
