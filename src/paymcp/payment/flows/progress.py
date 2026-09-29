@@ -163,15 +163,17 @@ def make_paid_wrapper(
         # Call the underlying tool with its original args/kwargs
         result = await func(*args, **kwargs)
         if await is_disconnected(ctx):
-            await save_completed_result(
+            saved = await save_completed_result(
                 state_store, state_key, result, RESULT_NS_SESSION,
                 func.__name__, fingerprint,
             )
-            # The payment is spent on this execution, and this is the last
-            # moment we know which payment that is: the retry is answered from
-            # the cache and never looks at the record. Leaving it here would let
-            # the next call find a paid payment and run free.
-            await discard_payment_state(state_store, state_key, payment_id)
+            # Spend the payment only if the result is safe somewhere. When the
+            # store cannot hold it - a durable store persists as JSON, and not
+            # every result survives that - the retry has to run the tool again,
+            # and it needs the payment to do that on. Clearing it here would
+            # answer "call again to retrieve the result" and then charge for it.
+            if saved:
+                await discard_payment_state(state_store, state_key, payment_id)
             return {
                 "status": "pending",
                 "message": "Connection aborted. Call the tool again to retrieve the result.",

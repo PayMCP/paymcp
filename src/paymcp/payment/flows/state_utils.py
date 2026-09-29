@@ -241,8 +241,11 @@ async def discard_payment_state(state_store, key: Any, payment_id: Any = None) -
         # is an advertised extension point. Accept either rather than silently
         # never matching - which would leave the record behind for ever.
         payload = entry.get("args") if isinstance(entry, Mapping) else None
-        if not isinstance(payload, Mapping):
-            payload = entry if isinstance(entry, Mapping) else None
+        if payload is None and isinstance(entry, Mapping) and "args" not in entry:
+            # A store that hands back what it was given rather than wrapping it.
+            # Only when there is no "args" at all: an envelope that happens to
+            # carry a payment_id of its own must not stand in for the payload.
+            payload = entry
         current = payload.get("payment_id") if isinstance(payload, Mapping) else None
         if str(current) != str(payment_id):
             logger.debug(

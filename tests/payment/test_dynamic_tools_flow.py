@@ -748,20 +748,20 @@ async def test_sweeping_one_payment_leaves_another_in_the_same_session_alone(
     mock_mcp.get_context.return_value = Mock(client_id="sess-suffix")
     ctx = Mock(client_id="sess-suffix")
 
-    mock_provider.create_payment = Mock(return_value=("pay_9f21", "https://u"))
+    mock_provider.create_payment = Mock(return_value=("pay_1234", "https://u"))
     fresh = await make_paid_wrapper(alpha, mock_mcp, {"mock": mock_provider}, price_info)(ctx=ctx)
 
-    mock_provider.create_payment = Mock(return_value=("pay_21", "https://u"))
+    mock_provider.create_payment = Mock(return_value=("1234", "https://u"))
     stale = await make_paid_wrapper(beta, mock_mcp, {"mock": mock_provider}, price_info)(ctx=ctx)
 
     # Only the second one is abandoned.
-    session = flow.PAYMENTS["pay_21"]
-    flow.PAYMENTS["pay_21"] = session._replace(
+    session = flow.PAYMENTS["1234"]
+    flow.PAYMENTS["1234"] = session._replace(
         ts=_time.time() - flow.ABANDONED_PAYMENT_TTL_SECONDS - 1
     )
     flow._sweep_abandoned(mock_mcp)
 
-    assert "pay_9f21" in flow.PAYMENTS, "the live payment was swept"
+    assert "pay_1234" in flow.PAYMENTS, "the live payment was swept"
     assert fresh["next_tool"] in flow.CONFIRMATION_TOOLS, (
         "the live payment's confirm tool was removed with the abandoned one"
     )
@@ -769,3 +769,15 @@ async def test_sweeping_one_payment_leaves_another_in_the_same_session_alone(
         "the live payment's tool was unhidden"
     )
     assert stale["next_tool"] not in flow.CONFIRMATION_TOOLS
+
+
+def test_the_sweep_window_outlasts_every_wait_in_the_flows():
+    """The window has to exceed anything a payment can legitimately take.
+
+    It was set to ten minutes once, which is less than PROGRESS spends waiting
+    for a single payment - so a slow payer lost the purchase they were in the
+    middle of making, and the sweep that took it ran on someone else's call.
+    """
+    from paymcp.payment.flows import dynamic_tools, progress
+
+    assert dynamic_tools.ABANDONED_PAYMENT_TTL_SECONDS > progress.MAX_WAIT_SECONDS

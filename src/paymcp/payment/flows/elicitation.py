@@ -86,7 +86,12 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         logger.debug(f"[PAYMCP Elicitation] Checking for previous payments (state_key={state_key}) ")
         stored = await state_store.get(state_key)
         if stored:
-            payment=stored.get("args")
+            # The bundled stores wrap the payload under "args"; a hand-written
+            # one may hand back what it was given, and `state_store` is an
+            # advertised extension point.
+            payment = stored.get("args")
+            if payment is None and "args" not in stored:
+                payment = stored
             payment_id = payment.get("payment_id")
             payment_url = payment.get("payment_url")
             if payment_id and payment_url:
@@ -132,15 +137,18 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             result = await func(*args,**kwargs) # calling original function
             if await is_disconnected(ctx):
                 logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
-                await save_completed_result(
+                saved = await save_completed_result(
                     state_store, state_key, result, RESULT_NS_SESSION,
                     func.__name__, fingerprint,
                 )
-                # The payment is spent on this execution, and this is the last
-                # moment we know which payment that is: the retry is answered
-                # from the cache and never looks at the record. Leaving it here
-                # would let the next call find a paid payment and run free.
-                await discard_payment_state(state_store, state_key, payment_id)
+                # Spend the payment only if the result is safe somewhere. When
+                # the store cannot hold it - a durable store persists as JSON,
+                # and not every result survives that - the retry has to run the
+                # tool again, and it needs the payment to do that on. Clearing
+                # it here would answer "call again to retrieve the result" and
+                # then charge for the retry.
+                if saved:
+                    await discard_payment_state(state_store, state_key, payment_id)
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",

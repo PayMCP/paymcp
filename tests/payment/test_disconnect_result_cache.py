@@ -711,3 +711,38 @@ async def test_a_dropped_call_does_not_leave_a_payment_behind_for_a_free_run(
         "the second call reused the payment the first one had already spent"
     )
     assert loop.await_count == 2, "the user was not asked to pay for the second call"
+
+
+@pytest.mark.asyncio
+async def test_a_result_the_store_refuses_leaves_the_payment_to_retry_on(
+    provider, price_info
+):
+    """We tell the caller to call again and retrieve the result. When the store
+    could not hold it, the retry has to run the tool - and it needs the payment
+    to run on. Spending it here would answer "call again" and then charge for
+    the call."""
+    from paymcp.payment.flows import elicitation
+
+    class JsonOnlyStore(InMemoryStateStore):
+        async def set(self, key, args, ttl_seconds=None):
+            json.dumps(args)  # what a durable store does before writing
+            await super().set(key, args, ttl_seconds)
+
+    store = JsonOnlyStore()
+    tool = CountingTool(result=object())  # nothing a JSON store can keep
+    ctx = FakeCtx()
+
+    with patch.object(elicitation, "run_elicitation_loop", AsyncMock(return_value="paid")):
+        wrapper = elicitation.make_paid_wrapper(
+            tool, Mock(), {"mock": provider}, price_info, state_store=store
+        )
+        ctx.drop()
+        assert _pending(await wrapper(ctx=ctx, text="A"))
+
+        ctx.restore()
+        await wrapper(ctx=ctx, text="A")
+
+    assert provider.create_payment.call_count == 1, (
+        "the caller was charged again for a retry we told them to make"
+    )
+    assert tool.calls == 2, "the retry should have run the tool, having nothing cached"
