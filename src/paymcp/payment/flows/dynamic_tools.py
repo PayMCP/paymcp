@@ -281,15 +281,18 @@ def _patch_list_tools_immediate(mcp):
 
     def filtered():
         tools = orig()
-        try:
-            sid = get_stable_session_id(mcp._mcp_server.request_context)
-            logger.info(f"[DYNAMIC_TOOLS] Filtering tools for session {sid}, HIDDEN_TOOLS={dict(HIDDEN_TOOLS)}, CONFIRMATION_TOOLS={dict(CONFIRMATION_TOOLS)}")
-        except LookupError:
-            logger.info("[DYNAMIC_TOOLS] No session context (LookupError) - returning all tools")
-            return tools  # No session context
-        except Exception as e:
-            logger.info(f"[DYNAMIC_TOOLS] Session retrieval error: {e} - returning all tools")
+        # The same context the rest of this module uses. Reading the low-level
+        # server's RequestContext instead gives a different answer: it carries
+        # no headers, so the session id falls through to a fresh UUID and never
+        # matches the one the payment was filed under.
+        sid = get_stable_session_id(get_ctx_from_server(mcp))
+        if sid is None:
+            logger.debug("[DYNAMIC_TOOLS] No session to filter for - returning all tools")
             return tools
+        logger.debug(
+            "[DYNAMIC_TOOLS] Filtering tools for session %s, hidden=%s",
+            sid, HIDDEN_TOOLS.get(sid, set()),
+        )
 
         hidden = HIDDEN_TOOLS.get(sid, set())
         filtered_tools = [t for t in tools if t.name not in hidden and (t.name not in CONFIRMATION_TOOLS or CONFIRMATION_TOOLS[t.name] == sid)]
@@ -328,13 +331,11 @@ def _patch_list_tools(mcp):
 
     def filtered():
         tools = orig()
-        # WHY: Use the server's public request_context to get the session ID
-        # request_context is a stable property that wraps the SDK's internal ContextVar
-                # This avoids importing low-level symbols like request_ctx
         try:
-            # Use the public Server.request_context property to fetch the current session
-            # Avoids importing request_ctx from low-level internals.
-            sid = get_stable_session_id(mcp._mcp_server.request_context)
+            # As above: the module's own context, not the low-level server's.
+            sid = get_stable_session_id(get_ctx_from_server(mcp))
+            if sid is None:
+                return tools
         except LookupError:
             return tools  # No session context (e.g., during testing)
         except Exception:

@@ -1,6 +1,6 @@
 """Tests for DYNAMIC_TOOLS payment flow."""
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, Mock
 from paymcp.payment.flows.dynamic_tools import make_paid_wrapper, PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS
 
 
@@ -638,3 +638,39 @@ async def test_patch_list_tools_already_patched():
 
     # Verify it didn't patch again (covers line 383)
     assert mcp._tool_manager.list_tools == original_func
+
+
+@pytest.mark.asyncio
+async def test_the_paid_tool_is_hidden_and_the_confirm_tool_shown(mock_mcp, mock_provider, price_info):
+    """The point of this flow: after initiating, the session sees the confirm
+    tool in place of the paid one.
+
+    The two sides used to identify the session differently - initiate read the
+    session header, the list filter read a low-level RequestContext that has
+    none and fell through to a fresh UUID - so nothing ever matched and the
+    listing was the exact opposite of the intent.
+    """
+    from paymcp.payment.flows.dynamic_tools import _patch_list_tools_immediate
+
+    async def paid_tool(**kwargs):
+        return {"result": "ok"}
+
+    paid_tool.__name__ = "paid_tool"
+
+    listed = [Mock(name="t1"), Mock(name="t2")]
+    listed[0].name = "paid_tool"
+    listed[1].name = "unrelated"
+
+    mock_mcp._tool_manager = MagicMock()
+    mock_mcp._tool_manager.list_tools = lambda: listed
+    mock_mcp.get_context.return_value = Mock(client_id="sess-9")
+
+    wrapper = make_paid_wrapper(paid_tool, mock_mcp, {"mock": mock_provider}, price_info)
+    initiated = await wrapper(ctx=Mock(client_id="sess-9"))
+
+    _patch_list_tools_immediate(mock_mcp)
+    names = [t.name for t in mock_mcp._tool_manager.list_tools()]
+
+    assert "paid_tool" not in names, f"the paid tool is still offered: {names}"
+    assert "unrelated" in names, "an unrelated tool was hidden too"
+    assert initiated["next_tool"].startswith("confirm_paid_tool_")

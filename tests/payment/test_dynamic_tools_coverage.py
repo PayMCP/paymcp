@@ -267,8 +267,9 @@ def test_patch_list_tools_immediate_success_with_session():
     # get_stable_session_id() derives, not id(session) — see PaymentSession.
     mcp = Mock()
     mcp._mcp_server = Mock()
-    mcp._mcp_server.request_context = Mock()
-    mcp._mcp_server.request_context.client_id = "sess-1"
+    # The filter identifies the session through the server's own context, the
+    # same one the payment was filed under.
+    mcp.get_context.return_value = Mock(client_id="sess-1")
 
     # Create tool manager with original list_tools
     mcp._tool_manager = Mock()
@@ -305,8 +306,9 @@ def test_patch_list_tools_success_with_session():
     # Create mock MCP with valid session
     mcp = Mock()
     mcp._mcp_server = Mock()
-    mcp._mcp_server.request_context = Mock()
-    mcp._mcp_server.request_context.client_id = "sess-1"
+    # The filter identifies the session through the server's own context, the
+    # same one the payment was filed under.
+    mcp.get_context.return_value = Mock(client_id="sess-1")
 
     # Create tool manager with original list_tools
     mcp._tool_manager = Mock()
