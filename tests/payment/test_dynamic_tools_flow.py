@@ -674,3 +674,49 @@ async def test_the_paid_tool_is_hidden_and_the_confirm_tool_shown(mock_mcp, mock
     assert "paid_tool" not in names, f"the paid tool is still offered: {names}"
     assert "unrelated" in names, "an unrelated tool was hidden too"
     assert initiated["next_tool"].startswith("confirm_paid_tool_")
+
+
+@pytest.mark.asyncio
+async def test_an_abandoned_payment_is_swept_with_everything_hanging_off_it(
+    mock_mcp, mock_provider, price_info
+):
+    """These registries live as long as the process and nothing else clears them.
+
+    Sweeping only PAYMENTS would be worse than not sweeping: the paid tool would
+    stay hidden from that session and its confirm tool would answer "unknown",
+    so the caller could neither retry nor start again.
+    """
+    import time as _time
+    from paymcp.payment.flows import dynamic_tools as flow
+
+    async def paid_tool(**kwargs):
+        return {"result": "ok"}
+
+    paid_tool.__name__ = "paid_tool"
+
+    mock_mcp._tool_manager = MagicMock()
+    mock_mcp._tool_manager._tools = {}
+    mock_mcp.get_context.return_value = Mock(client_id="sess-abandoned")
+
+    wrapper = make_paid_wrapper(paid_tool, mock_mcp, {"mock": mock_provider}, price_info)
+    initiated = await wrapper(ctx=Mock(client_id="sess-abandoned"))
+    pid = initiated["payment_id"]
+
+    assert pid in flow.PAYMENTS
+    assert "paid_tool" in flow.HIDDEN_TOOLS.get("sess-abandoned", set())
+
+    # Nobody ever confirms, and the window passes.
+    session = flow.PAYMENTS[pid]
+    flow.PAYMENTS[pid] = session._replace(
+        ts=_time.time() - flow.ABANDONED_PAYMENT_TTL_SECONDS - 1
+    )
+
+    flow._sweep_abandoned(mock_mcp)
+
+    assert pid not in flow.PAYMENTS, "the abandoned payment was kept"
+    assert "paid_tool" not in flow.HIDDEN_TOOLS.get("sess-abandoned", set()), (
+        "the paid tool is still hidden from a session with no payment left"
+    )
+    assert initiated["next_tool"] not in flow.CONFIRMATION_TOOLS, (
+        "a dead confirm tool is still registered"
+    )

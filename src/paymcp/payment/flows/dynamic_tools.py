@@ -8,6 +8,7 @@ Monitor: https://github.com/modelcontextprotocol/python-sdk for future APIs.
 If SDK adds hooks/filters, we can remove patches and use official APIs.
 """
 import functools
+import time
 from typing import Dict, Any, Set, NamedTuple
 from ...utils.messages import open_link_message
 import logging
@@ -17,9 +18,17 @@ from ...utils.disconnect import is_disconnected
 logger = logging.getLogger(__name__)
 
 # State: payment_id -> (session_id, args)
+# How long an abandoned payment is kept before the registries are swept. It is
+# the window a caller has to come back for a result they paid for, so it is
+# generous rather than tight; the clock restarts when a result is stored.
+ABANDONED_PAYMENT_TTL_SECONDS = 600
+
+
 class PaymentSession(NamedTuple):
     session_id: str  # Stable per-session identifier
     args: Dict[str, Any]
+    # When this session was last touched, for the sweeper below.
+    ts: float = 0.0
     # Set once the paid tool has run but the client dropped before receiving the
     # result, so a retry is answered from here instead of running the tool again.
     has_result: bool = False
@@ -46,11 +55,33 @@ async def _send_notification(ctx):
         pass
 
 
+def _sweep_abandoned(mcp) -> None:
+    """Drop payments nobody came back for, and everything hanging off them.
+
+    These registries live for the lifetime of the process and nothing else
+    removes an entry: a caller who never confirms leaves their session, their
+    arguments and - once a result has been stored - the result itself, for
+    good. Clearing only PAYMENTS would be worse than not sweeping at all: the
+    paid tool would stay hidden from that session and its confirm tool would
+    answer "unknown", leaving the caller unable to retry or to start again.
+    """
+    cutoff = time.time() - ABANDONED_PAYMENT_TTL_SECONDS
+    for pid, session in [(pid, s) for pid, s in PAYMENTS.items() if s.ts and s.ts < cutoff]:
+        confirm_name = next(
+            (name for name, sid in CONFIRMATION_TOOLS.items()
+             if sid == session.session_id and name.endswith(pid)),
+            None,
+        )
+        tool_name = confirm_name.split("confirm_", 1)[-1][: -len(pid) - 1] if confirm_name else None
+        logger.info("[DYNAMIC_TOOLS] Sweeping abandoned payment %s", pid)
+        _cleanup_payment(mcp, session, pid, tool_name, confirm_name or "")
+
+
 def _cleanup_payment(mcp, ps, pid: str, tool_name: str, confirm_name: str) -> None:
     """Drop the payment session, unhide the paid tool and remove its confirm tool."""
     PAYMENTS.pop(pid, None)
 
-    if ps.session_id in HIDDEN_TOOLS:
+    if ps.session_id in HIDDEN_TOOLS and tool_name:
         HIDDEN_TOOLS[ps.session_id].discard(tool_name)
         if not HIDDEN_TOOLS[ps.session_id]:
             del HIDDEN_TOOLS[ps.session_id]
@@ -96,7 +127,8 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         logger.info(f"[DYNAMIC_TOOLS] Payment initiated: tool={tool_name}, session={session_id}, payment_id={pid}")
 
         # Store state: payment session, hide tool, track confirm tool
-        PAYMENTS[pid] = PaymentSession(session_id, kwargs)
+        _sweep_abandoned(mcp)
+        PAYMENTS[pid] = PaymentSession(session_id, kwargs, ts=time.time())
         HIDDEN_TOOLS.setdefault(session_id, set()).add(tool_name)
         CONFIRMATION_TOOLS[confirm_name] = session_id
 
@@ -163,7 +195,11 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
                 if await is_disconnected(ctx):
                     logger.warning("[dynamic_tools] Disconnected after payment confirmation; returning pending result")
-                    PAYMENTS[pid] = ps._replace(has_result=True, result=result)
+                    # Put the session back, now carrying the result they paid
+                    # for, and restart the clock so they get the full window.
+                    PAYMENTS[pid] = ps._replace(
+                        has_result=True, result=result, ts=time.time()
+                    )
                     return {
                         "status": "pending",
                         "message": "Connection aborted. Call the tool again to retrieve the result.",
