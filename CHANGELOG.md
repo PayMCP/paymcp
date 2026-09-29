@@ -2,6 +2,7 @@
 
 # 0.9.1
 ### Fixed
+- Declare the `mcp` dependency, bounded to `>=1,<2`. It was not declared at all, and `pip install mcp paymcp` now resolves mcp 2.x, where `mcp.server.fastmcp` no longer exists - so a new install stopped working before it ran a line of its own code. PayMCP is written against the 1.x SDK.
 - A paid tool no longer runs twice when the client disconnects before receiving the result. The result is stored on disconnect and returned on the retry, and only to the call that paid for it.
 
 # 0.9.0
