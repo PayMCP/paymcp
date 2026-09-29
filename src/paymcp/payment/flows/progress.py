@@ -167,11 +167,8 @@ def make_paid_wrapper(
                 state_store, state_key, result, RESULT_NS_SESSION,
                 func.__name__, fingerprint,
             )
-            # Spend the payment only if the result is safe somewhere. When the
-            # store cannot hold it - a durable store persists as JSON, and not
-            # every result survives that - the retry has to run the tool again,
-            # and it needs the payment to do that on. Clearing it here would
-            # answer "call again to retrieve the result" and then charge for it.
+            # Only when the result is stored: otherwise the retry must run
+            # the tool again, and it needs this payment to run on.
             if saved:
                 await discard_payment_state(state_store, state_key, payment_id)
             return {

@@ -78,17 +78,14 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             await clear_completed_result(
                 state_store, state_key, RESULT_NS_SESSION, result_token
             )
-            # This call never looked at a payment record - it was answered from
-            # the cache - so it has no business deleting whatever is under the
-            # key now. The next successful call clears it, or the store expires it.
+            # Answered from the cache: this call never held a payment record,
+            # so it does not get to remove one.
             return cached_result
 
         logger.debug(f"[PAYMCP Elicitation] Checking for previous payments (state_key={state_key}) ")
         stored = await state_store.get(state_key)
         if stored:
-            # The bundled stores wrap the payload under "args"; a hand-written
-            # one may hand back what it was given, and `state_store` is an
-            # advertised extension point.
+            # The bundled stores wrap under "args"; a hand-written one may not.
             payment = stored.get("args")
             if payment is None and "args" not in stored:
                 payment = stored
@@ -141,12 +138,8 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     state_store, state_key, result, RESULT_NS_SESSION,
                     func.__name__, fingerprint,
                 )
-                # Spend the payment only if the result is safe somewhere. When
-                # the store cannot hold it - a durable store persists as JSON,
-                # and not every result survives that - the retry has to run the
-                # tool again, and it needs the payment to do that on. Clearing
-                # it here would answer "call again to retrieve the result" and
-                # then charge for the retry.
+                # Only when the result is stored: otherwise the retry must
+                # run the tool again, and it needs this payment to run on.
                 if saved:
                     await discard_payment_state(state_store, state_key, payment_id)
                 return {

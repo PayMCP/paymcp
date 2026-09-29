@@ -18,12 +18,8 @@ from ...utils.disconnect import is_disconnected
 logger = logging.getLogger(__name__)
 
 # State: payment_id -> (session_id, args)
-# How long an abandoned payment is kept before the registries are swept. This
-# has to sit above the longest a payment can legitimately take - PROGRESS alone
-# waits fifteen minutes for one - or a slow payer loses the purchase they are in
-# the middle of making. An hour matches what the state stores keep. The clock
-# restarts when a result is stored, so a caller who dropped gets the full window
-# to come back for it.
+# Above the longest a payment can legitimately take, or a slow payer loses a
+# purchase in progress. Matches the state stores' ttl.
 ABANDONED_PAYMENT_TTL_SECONDS = 3600
 
 
@@ -32,9 +28,8 @@ class PaymentSession(NamedTuple):
     args: Dict[str, Any]
     # When this session was last touched, for the sweeper below.
     ts: float = 0.0
-    # What the sweep needs to undo, kept rather than reconstructed: recovering
-    # them from the confirm tool's name means matching on the payment id, and a
-    # shorter id is a suffix of a longer one.
+    # Kept rather than recovered from the confirm tool's name: a shorter
+    # payment id is a suffix of a longer one.
     tool_name: str = ""
     confirm_name: str = ""
     # Set once the paid tool has run but the client dropped before receiving the
@@ -323,10 +318,8 @@ def _patch_list_tools_immediate(mcp):
 
     def filtered():
         tools = orig()
-        # The same context the rest of this module uses. Reading the low-level
-        # server's RequestContext instead gives a different answer: it carries
-        # no headers, so the session id falls through to a fresh UUID and never
-        # matches the one the payment was filed under.
+        # The same context initiation used. The low-level server's
+        # RequestContext carries no headers, so its session id never matches.
         sid = get_stable_session_id(get_ctx_from_server(mcp))
         if sid is None:
             logger.debug("[DYNAMIC_TOOLS] No session to filter for - returning all tools")

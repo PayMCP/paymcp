@@ -236,15 +236,11 @@ async def discard_payment_state(state_store, key: Any, payment_id: Any = None) -
 
     try:
         entry = await state_store.get(key)
-        # The bundled stores wrap what they were given under "args"; a
-        # hand-written one may hand back the payload itself, and `state_store`
-        # is an advertised extension point. Accept either rather than silently
-        # never matching - which would leave the record behind for ever.
+        # The bundled stores wrap under "args"; a hand-written one may not.
         payload = entry.get("args") if isinstance(entry, Mapping) else None
         if payload is None and isinstance(entry, Mapping) and "args" not in entry:
-            # A store that hands back what it was given rather than wrapping it.
-            # Only when there is no "args" at all: an envelope that happens to
-            # carry a payment_id of its own must not stand in for the payload.
+            # Only with no "args" at all, so an envelope carrying its own
+            # payment_id cannot stand in for the payload.
             payload = entry
         current = payload.get("payment_id") if isinstance(payload, Mapping) else None
         if str(current) != str(payment_id):
