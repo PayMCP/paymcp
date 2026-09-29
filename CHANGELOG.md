@@ -3,7 +3,13 @@
 # 0.9.1
 ### Fixed
 - Declare the `mcp` dependency, bounded to `>=1,<2`. It was not declared at all, and `pip install mcp paymcp` now resolves mcp 2.x, where `mcp.server.fastmcp` no longer exists - so a new install stopped working before it ran a line of its own code. PayMCP is written against the 1.x SDK.
-- A paid tool no longer runs twice when the client disconnects before receiving the result. The result is stored on disconnect and returned on the retry, and only to the call that paid for it.
+- A paid tool no longer runs twice when the client disconnects before receiving the result. The result is stored on disconnect and returned on the retry, and only to the call that paid for it. In RESUBMIT and TWO_STEP a further retry with the same payment id returns that result again until the store expires it, where it previously reported the payment as unknown.
+- A state store that fails to delete no longer costs the caller the result they paid for: the failure is logged and the result returned. The payment record then stays reusable until it expires.
+- The in-memory per-payment lock is now actually exclusive. It discarded its registry entry as soon as the holder finished, so a caller arriving after that ran alongside one still queued - which is the race RESUBMIT relies on it to prevent.
+- DYNAMIC_TOOLS now hides the paid tool from the session paying for it and offers the confirm tool, which is what it always intended: the two sides resolved the session differently, so the listing was the opposite.
+- ELICITATION and PROGRESS delete a session's payment record only when it is still the one that call was using, so a concurrent call no longer loses a payment the user may already have made.
+- DYNAMIC_TOOLS sweeps payments nobody came back for, together with the tool registries that hang off them, instead of holding them for the lifetime of the process.
+- Reading the caller's identity from a context with no active request no longer fails the tool call. `Context.request_context`, `session` and `client_id` raise there, and `getattr` with a default does not cover it.
 
 # 0.9.0
 ### Breaking Changes
