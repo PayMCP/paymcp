@@ -5,7 +5,8 @@ import json
 import logging
 from urllib.parse import quote
 from typing import Any, Dict, Optional
-from ...utils.context import get_ctx_from_server, capture_client_from_ctx
+from ...utils.context import get_ctx_from_server, capture_client_from_ctx, read
+from .state_utils import discard_spent_state
 
 
 
@@ -17,9 +18,9 @@ def _get_headers(ctx: Any) -> Dict[str, str]:
 
     Works with Starlette `Headers` (mapping-like) and plain dict.
     """
-    request_context = getattr(ctx, "request_context", None) if ctx is not None else None
-    req = getattr(request_context, "request", None) if request_context is not None else None
-    headers = getattr(req, "headers", None) if req is not None else None
+    request_context = read(ctx, "request_context")
+    req = read(request_context, "request")
+    headers = read(req, "headers")
 
     if headers is None:
         return {}
@@ -51,12 +52,12 @@ def _get_meta(ctx: Any) -> Dict[str, Any]:
     In FastMCP, meta typically lives on `ctx.request_context.meta` and is often a
     Pydantic model (so it's not a plain dict).
     """
-    request_context = getattr(ctx, "request_context", None) if ctx is not None else None
-    meta = getattr(request_context, "meta", None) if request_context is not None else None
+    request_context = read(ctx, "request_context")
+    meta = read(request_context, "meta")
 
     if meta is None:
         # Fallbacks for other runtimes
-        meta = getattr(ctx, "meta", None) if ctx is not None else None
+        meta = read(ctx, "meta")
 
     if meta is None:
         return {}
@@ -281,7 +282,12 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             raise RuntimeError("Payment failed")
 
         if payment_status == "paid":
-            await state_store.delete(str(challenge_id))
+            # The provider settles inside get_payment_status, so the money has
+            # already moved by the time we get here. A store that cannot delete
+            # must not stop the tool from running: the caller has paid, and the
+            # retry would go back through get_payment_status and attempt a
+            # second settlement.
+            await discard_spent_state(state_store, str(challenge_id))
             return await func(*args, **kwargs)
 
         raise RuntimeError(

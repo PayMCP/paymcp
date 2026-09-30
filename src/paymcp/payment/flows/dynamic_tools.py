@@ -8,6 +8,7 @@ Monitor: https://github.com/modelcontextprotocol/python-sdk for future APIs.
 If SDK adds hooks/filters, we can remove patches and use official APIs.
 """
 import functools
+import time
 from typing import Dict, Any, Set, NamedTuple
 from ...utils.messages import open_link_message
 import logging
@@ -17,9 +18,24 @@ from ...utils.disconnect import is_disconnected
 logger = logging.getLogger(__name__)
 
 # State: payment_id -> (session_id, args)
+# Above the longest a payment can legitimately take, or a slow payer loses a
+# purchase in progress. Matches the state stores' ttl.
+ABANDONED_PAYMENT_TTL_SECONDS = 3600
+
+
 class PaymentSession(NamedTuple):
     session_id: str  # Stable per-session identifier
     args: Dict[str, Any]
+    # When this session was last touched, for the sweeper below.
+    ts: float = 0.0
+    # Kept rather than recovered from the confirm tool's name: a shorter
+    # payment id is a suffix of a longer one.
+    tool_name: str = ""
+    confirm_name: str = ""
+    # Set once the paid tool has run but the client dropped before receiving the
+    # result, so a retry is answered from here instead of running the tool again.
+    has_result: bool = False
+    result: Any = None
 
 PAYMENTS: Dict[str, PaymentSession] = {}  # payment_id -> PaymentSession
 HIDDEN_TOOLS: Dict[str, Set[str]] = {}  # session_id -> {hidden_tool_names}
@@ -40,6 +56,37 @@ async def _send_notification(ctx):
         # Ignore notification failures - notifications are optional and client may not support them
         # Common failures: AttributeError (no request_ctx), RuntimeError (no session), etc.
         pass
+
+
+def _sweep_abandoned(mcp) -> None:
+    """Drop payments nobody came back for, and everything hanging off them.
+
+    These registries live for the lifetime of the process and nothing else
+    removes an entry: a caller who never confirms leaves their session, their
+    arguments and - once a result has been stored - the result itself, for
+    good. Clearing only PAYMENTS would be worse than not sweeping at all: the
+    paid tool would stay hidden from that session and its confirm tool would
+    answer "unknown", leaving the caller unable to retry or to start again.
+    """
+    cutoff = time.time() - ABANDONED_PAYMENT_TTL_SECONDS
+    stale = [(pid, s) for pid, s in PAYMENTS.items() if s.ts and s.ts < cutoff]
+    for pid, session in stale:
+        logger.info("[DYNAMIC_TOOLS] Sweeping abandoned payment %s", pid)
+        _cleanup_payment(mcp, session, pid, session.tool_name, session.confirm_name)
+
+
+def _cleanup_payment(mcp, ps, pid: str, tool_name: str, confirm_name: str) -> None:
+    """Drop the payment session, unhide the paid tool and remove its confirm tool."""
+    PAYMENTS.pop(pid, None)
+
+    if ps.session_id in HIDDEN_TOOLS and tool_name:
+        HIDDEN_TOOLS[ps.session_id].discard(tool_name)
+        if not HIDDEN_TOOLS[ps.session_id]:
+            del HIDDEN_TOOLS[ps.session_id]
+
+    if hasattr(mcp, '_tool_manager') and confirm_name in mcp._tool_manager._tools:
+        del mcp._tool_manager._tools[confirm_name]
+    CONFIRMATION_TOOLS.pop(confirm_name, None)
 
 
 def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config=None):
@@ -78,7 +125,11 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         logger.info(f"[DYNAMIC_TOOLS] Payment initiated: tool={tool_name}, session={session_id}, payment_id={pid}")
 
         # Store state: payment session, hide tool, track confirm tool
-        PAYMENTS[pid] = PaymentSession(session_id, kwargs)
+        _sweep_abandoned(mcp)
+        PAYMENTS[pid] = PaymentSession(
+            session_id, kwargs, ts=time.time(),
+            tool_name=tool_name, confirm_name=confirm_name,
+        )
         HIDDEN_TOOLS.setdefault(session_id, set()).add(tool_name)
         CONFIRMATION_TOOLS[confirm_name] = session_id
 
@@ -95,7 +146,17 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
         # Register confirmation tool
         @mcp.tool(**confirm_tool_args)
-        async def _confirm(ctx=None):
+        async def _confirm():
+            # No ctx parameter: FastMCP injects a context only into an annotated
+            # one, so an unannotated `ctx=None` is not filled in - it is just
+            # advertised to the model as an argument to guess at. Resolve the
+            # context from the server instead, the way two_step does.
+            ctx = None
+            if mcp is not None:
+                try:
+                    ctx = get_ctx_from_server(mcp)
+                except Exception:
+                    ctx = None
             ps = PAYMENTS.get(pid)
             if not ps:
                 return {
@@ -104,6 +165,21 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     "message": "Payment session unknown or expired - inform user to start new payment",
                     "payment_id": pid
                 }
+
+            if ps.has_result:
+                if await is_disconnected(ctx):
+                    logger.warning("[dynamic_tools] Still disconnected; keeping cached result for the next retry")
+                    return {
+                        "status": "pending",
+                        "message": "Connection aborted. Call the tool again to retrieve the result.",
+                        "payment_id": pid,
+                        "payment_url": payment_url,
+                        "annotations": { "payment": { "status": "paid", "payment_id": pid } }
+                    }
+                logger.info(f"[dynamic_tools] Returning cached result for payment_id={pid}")
+                _cleanup_payment(mcp, ps, pid, tool_name, confirm_name)
+                await _send_notification(ctx)
+                return ps.result
 
             try:
                 status = provider.get_payment_status(payment_id)
@@ -120,6 +196,11 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
 
                 if await is_disconnected(ctx):
                     logger.warning("[dynamic_tools] Disconnected after payment confirmation; returning pending result")
+                    # Put the session back, now carrying the result they paid
+                    # for, and restart the clock so they get the full window.
+                    PAYMENTS[pid] = ps._replace(
+                        has_result=True, result=result, ts=time.time()
+                    )
                     return {
                         "status": "pending",
                         "message": "Connection aborted. Call the tool again to retrieve the result.",
@@ -128,18 +209,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                         "annotations": { "payment": { "status": "paid", "payment_id": pid } }
                     }
 
-                del PAYMENTS[pid]
-
-                # Cleanup hidden tools
-                if ps.session_id in HIDDEN_TOOLS:
-                    HIDDEN_TOOLS[ps.session_id].discard(tool_name)
-                    if not HIDDEN_TOOLS[ps.session_id]:
-                        del HIDDEN_TOOLS[ps.session_id]
-
-                # Remove confirmation tool
-                if hasattr(mcp, '_tool_manager') and confirm_name in mcp._tool_manager._tools:
-                    del mcp._tool_manager._tools[confirm_name]
-                CONFIRMATION_TOOLS.pop(confirm_name, None)
+                _cleanup_payment(mcp, ps, pid, tool_name, confirm_name)
 
                 await _send_notification(ctx)
                 return result
@@ -248,15 +318,16 @@ def _patch_list_tools_immediate(mcp):
 
     def filtered():
         tools = orig()
-        try:
-            sid = get_stable_session_id(mcp._mcp_server.request_context)
-            logger.info(f"[DYNAMIC_TOOLS] Filtering tools for session {sid}, HIDDEN_TOOLS={dict(HIDDEN_TOOLS)}, CONFIRMATION_TOOLS={dict(CONFIRMATION_TOOLS)}")
-        except LookupError:
-            logger.info("[DYNAMIC_TOOLS] No session context (LookupError) - returning all tools")
-            return tools  # No session context
-        except Exception as e:
-            logger.info(f"[DYNAMIC_TOOLS] Session retrieval error: {e} - returning all tools")
+        # The same context initiation used. The low-level server's
+        # RequestContext carries no headers, so its session id never matches.
+        sid = get_stable_session_id(get_ctx_from_server(mcp))
+        if sid is None:
+            logger.debug("[DYNAMIC_TOOLS] No session to filter for - returning all tools")
             return tools
+        logger.debug(
+            "[DYNAMIC_TOOLS] Filtering tools for session %s, hidden=%s",
+            sid, HIDDEN_TOOLS.get(sid, set()),
+        )
 
         hidden = HIDDEN_TOOLS.get(sid, set())
         filtered_tools = [t for t in tools if t.name not in hidden and (t.name not in CONFIRMATION_TOOLS or CONFIRMATION_TOOLS[t.name] == sid)]
@@ -295,13 +366,11 @@ def _patch_list_tools(mcp):
 
     def filtered():
         tools = orig()
-        # WHY: Use the server's public request_context to get the session ID
-        # request_context is a stable property that wraps the SDK's internal ContextVar
-                # This avoids importing low-level symbols like request_ctx
         try:
-            # Use the public Server.request_context property to fetch the current session
-            # Avoids importing request_ctx from low-level internals.
-            sid = get_stable_session_id(mcp._mcp_server.request_context)
+            # As above: the module's own context, not the low-level server's.
+            sid = get_stable_session_id(get_ctx_from_server(mcp))
+            if sid is None:
+                return tools
         except LookupError:
             return tools  # No session context (e.g., during testing)
         except Exception:

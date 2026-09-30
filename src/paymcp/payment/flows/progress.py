@@ -4,6 +4,15 @@ import functools
 from typing import Optional
 from ...utils.messages import open_link_message
 from ...utils.disconnect import is_disconnected
+from .state_utils import (
+    RESULT_NS_SESSION,
+    call_fingerprint,
+    clear_completed_result,
+    discard_payment_state,
+    discard_spent_state,
+    peek_completed_result,
+    save_completed_result,
+)
 from ...utils.context import get_ctx_from_server, get_stable_session_id
 
 DEFAULT_POLL_SECONDS = 3          # how often to poll provider.get_payment_status
@@ -60,6 +69,31 @@ def make_paid_wrapper(
         payment_status = None
         message = None
         state_key = f"{func.__name__}:{session_id}" if session_id is not None else None
+
+        # The tool already ran and was paid for, but the client dropped before
+        # receiving the result: return the stored one instead of polling for a
+        # new payment and running the tool again. The state key covers every call
+        # this session makes to this tool, so the result is only served back to
+        # the call that produced it.
+        fingerprint = call_fingerprint(kwargs, args)
+        has_result, cached_result, result_token = await peek_completed_result(
+            state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
+        )
+        if has_result:
+            if await is_disconnected(ctx):
+                return {
+                    "status": "pending",
+                    "message": "Connection aborted. Call the tool again to retrieve the result.",
+                }
+            # Unlike the payment-keyed flows, this key is reused by later calls,
+            # so the result is dropped once delivered - otherwise the next
+            # identical call would be served from cache instead of being paid for.
+            await clear_completed_result(
+                state_store, state_key, RESULT_NS_SESSION, result_token
+            )
+            # Answered from the cache: this call never held a payment record,
+            # so it does not get to remove one.
+            return cached_result
 
         # Try to restore existing payment for this session
         if state_store is not None and state_key is not None:
@@ -129,6 +163,14 @@ def make_paid_wrapper(
         # Call the underlying tool with its original args/kwargs
         result = await func(*args, **kwargs)
         if await is_disconnected(ctx):
+            saved = await save_completed_result(
+                state_store, state_key, result, RESULT_NS_SESSION,
+                func.__name__, fingerprint,
+            )
+            # Only when the result is stored: otherwise the retry must run
+            # the tool again, and it needs this payment to run on.
+            if saved:
+                await discard_payment_state(state_store, state_key, payment_id)
             return {
                 "status": "pending",
                 "message": "Connection aborted. Call the tool again to retrieve the result.",
@@ -136,8 +178,7 @@ def make_paid_wrapper(
                 "payment_url": payment_url,
                 "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
             }
-        if state_store is not None and state_key is not None:
-            await state_store.delete(state_key)
+        await discard_payment_state(state_store, state_key, payment_id)
 
         return result
 

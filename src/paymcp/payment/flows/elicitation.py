@@ -5,6 +5,15 @@ from ...utils.disconnect import is_disconnected
 from ...utils.messages import open_link_message
 from ...utils.elicitation import run_elicitation_loop
 from ...utils.context import get_ctx_from_server, get_stable_session_id
+from .state_utils import (
+    RESULT_NS_SESSION,
+    call_fingerprint,
+    clear_completed_result,
+    discard_payment_state,
+    discard_spent_state,
+    peek_completed_result,
+    save_completed_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +55,40 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
         message = None
         state_key = f"{func.__name__}:{session_id}"
 
+        # The tool already ran and was paid for, but the client dropped before
+        # receiving the result: return the stored one instead of asking for
+        # payment again or re-running the tool. The state key covers every call
+        # this session makes to this tool, so the result is only served back to
+        # the call that produced it.
+        fingerprint = call_fingerprint(kwargs, args)
+        has_result, cached_result, result_token = await peek_completed_result(
+            state_store, state_key, RESULT_NS_SESSION, func.__name__, fingerprint
+        )
+        if has_result:
+            if await is_disconnected(ctx):
+                logger.warning("[PAYMCP Elicitation] Still disconnected; keeping cached result for the next retry")
+                return {
+                    "status": "pending",
+                    "message": "Connection aborted. Call the tool again to retrieve the result.",
+                }
+            logger.info(f"[PAYMCP Elicitation] Returning cached result for state_key={state_key}")
+            # Unlike the payment-keyed flows, this key is reused by later calls,
+            # so the result is dropped once delivered - otherwise the next
+            # identical call would be served from cache instead of being paid for.
+            await clear_completed_result(
+                state_store, state_key, RESULT_NS_SESSION, result_token
+            )
+            # Answered from the cache: this call never held a payment record,
+            # so it does not get to remove one.
+            return cached_result
+
         logger.debug(f"[PAYMCP Elicitation] Checking for previous payments (state_key={state_key}) ")
         stored = await state_store.get(state_key)
         if stored:
-            payment=stored.get("args")
+            # The bundled stores wrap under "args"; a hand-written one may not.
+            payment = stored.get("args")
+            if payment is None and "args" not in stored:
+                payment = stored
             payment_id = payment.get("payment_id")
             payment_url = payment.get("payment_url")
             if payment_id and payment_url:
@@ -95,6 +134,14 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
             result = await func(*args,**kwargs) # calling original function
             if await is_disconnected(ctx):
                 logger.warning("[PAYMCP Elicitation] aborted after payment confirmation but before returning tool result.")
+                saved = await save_completed_result(
+                    state_store, state_key, result, RESULT_NS_SESSION,
+                    func.__name__, fingerprint,
+                )
+                # Only when the result is stored: otherwise the retry must
+                # run the tool again, and it needs this payment to run on.
+                if saved:
+                    await discard_payment_state(state_store, state_key, payment_id)
                 return {
                     "status": "pending",
                     "message": "Connection aborted. Call the tool again to retrieve the result.",
@@ -102,7 +149,7 @@ def make_paid_wrapper(func, mcp, providers, price_info, state_store=None, config
                     "payment_url": payment_url,
                     "annotations": { "payment": { "status": "paid", "payment_id": str(payment_id) } }
                 }
-            await state_store.delete(state_key)
+            await discard_payment_state(state_store, state_key, payment_id)
             return result
 
         if (payment_status=="canceled"):

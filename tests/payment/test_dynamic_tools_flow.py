@@ -1,6 +1,6 @@
 """Tests for DYNAMIC_TOOLS payment flow."""
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, Mock
 from paymcp.payment.flows.dynamic_tools import make_paid_wrapper, PAYMENTS, HIDDEN_TOOLS, CONFIRMATION_TOOLS
 
 
@@ -638,3 +638,146 @@ async def test_patch_list_tools_already_patched():
 
     # Verify it didn't patch again (covers line 383)
     assert mcp._tool_manager.list_tools == original_func
+
+
+@pytest.mark.asyncio
+async def test_the_paid_tool_is_hidden_and_the_confirm_tool_shown(mock_mcp, mock_provider, price_info):
+    """The point of this flow: after initiating, the session sees the confirm
+    tool in place of the paid one.
+
+    The two sides used to identify the session differently - initiate read the
+    session header, the list filter read a low-level RequestContext that has
+    none and fell through to a fresh UUID - so nothing ever matched and the
+    listing was the exact opposite of the intent.
+    """
+    from paymcp.payment.flows.dynamic_tools import _patch_list_tools_immediate
+
+    async def paid_tool(**kwargs):
+        return {"result": "ok"}
+
+    paid_tool.__name__ = "paid_tool"
+
+    listed = [Mock(name="t1"), Mock(name="t2")]
+    listed[0].name = "paid_tool"
+    listed[1].name = "unrelated"
+
+    mock_mcp._tool_manager = MagicMock()
+    mock_mcp._tool_manager.list_tools = lambda: listed
+    mock_mcp.get_context.return_value = Mock(client_id="sess-9")
+
+    wrapper = make_paid_wrapper(paid_tool, mock_mcp, {"mock": mock_provider}, price_info)
+    initiated = await wrapper(ctx=Mock(client_id="sess-9"))
+
+    _patch_list_tools_immediate(mock_mcp)
+    names = [t.name for t in mock_mcp._tool_manager.list_tools()]
+
+    assert "paid_tool" not in names, f"the paid tool is still offered: {names}"
+    assert "unrelated" in names, "an unrelated tool was hidden too"
+    assert initiated["next_tool"].startswith("confirm_paid_tool_")
+
+
+@pytest.mark.asyncio
+async def test_an_abandoned_payment_is_swept_with_everything_hanging_off_it(
+    mock_mcp, mock_provider, price_info
+):
+    """These registries live as long as the process and nothing else clears them.
+
+    Sweeping only PAYMENTS would be worse than not sweeping: the paid tool would
+    stay hidden from that session and its confirm tool would answer "unknown",
+    so the caller could neither retry nor start again.
+    """
+    import time as _time
+    from paymcp.payment.flows import dynamic_tools as flow
+
+    async def paid_tool(**kwargs):
+        return {"result": "ok"}
+
+    paid_tool.__name__ = "paid_tool"
+
+    mock_mcp._tool_manager = MagicMock()
+    mock_mcp._tool_manager._tools = {}
+    mock_mcp.get_context.return_value = Mock(client_id="sess-abandoned")
+
+    wrapper = make_paid_wrapper(paid_tool, mock_mcp, {"mock": mock_provider}, price_info)
+    initiated = await wrapper(ctx=Mock(client_id="sess-abandoned"))
+    pid = initiated["payment_id"]
+
+    assert pid in flow.PAYMENTS
+    assert "paid_tool" in flow.HIDDEN_TOOLS.get("sess-abandoned", set())
+
+    # Nobody ever confirms, and the window passes.
+    session = flow.PAYMENTS[pid]
+    flow.PAYMENTS[pid] = session._replace(
+        ts=_time.time() - flow.ABANDONED_PAYMENT_TTL_SECONDS - 1
+    )
+
+    flow._sweep_abandoned(mock_mcp)
+
+    assert pid not in flow.PAYMENTS, "the abandoned payment was kept"
+    assert "paid_tool" not in flow.HIDDEN_TOOLS.get("sess-abandoned", set()), (
+        "the paid tool is still hidden from a session with no payment left"
+    )
+    assert initiated["next_tool"] not in flow.CONFIRMATION_TOOLS, (
+        "a dead confirm tool is still registered"
+    )
+
+
+@pytest.mark.asyncio
+async def test_sweeping_one_payment_leaves_another_in_the_same_session_alone(
+    mock_mcp, mock_provider, price_info
+):
+    """Two payments in one session, where one id is a suffix of the other.
+
+    The sweep used to find the confirm tool by matching the end of its name, so
+    the shorter id matched the longer one's tool and took it down - leaving a
+    live payment with no way to confirm it.
+    """
+    import time as _time
+    from paymcp.payment.flows import dynamic_tools as flow
+
+    async def alpha(**kwargs):
+        return {"result": "a"}
+
+    async def beta(**kwargs):
+        return {"result": "b"}
+
+    alpha.__name__, beta.__name__ = "alpha", "beta"
+
+    mock_mcp._tool_manager = MagicMock()
+    mock_mcp._tool_manager._tools = {}
+    mock_mcp.get_context.return_value = Mock(client_id="sess-suffix")
+    ctx = Mock(client_id="sess-suffix")
+
+    mock_provider.create_payment = Mock(return_value=("pay_1234", "https://u"))
+    fresh = await make_paid_wrapper(alpha, mock_mcp, {"mock": mock_provider}, price_info)(ctx=ctx)
+
+    mock_provider.create_payment = Mock(return_value=("1234", "https://u"))
+    stale = await make_paid_wrapper(beta, mock_mcp, {"mock": mock_provider}, price_info)(ctx=ctx)
+
+    # Only the second one is abandoned.
+    session = flow.PAYMENTS["1234"]
+    flow.PAYMENTS["1234"] = session._replace(
+        ts=_time.time() - flow.ABANDONED_PAYMENT_TTL_SECONDS - 1
+    )
+    flow._sweep_abandoned(mock_mcp)
+
+    assert "pay_1234" in flow.PAYMENTS, "the live payment was swept"
+    assert fresh["next_tool"] in flow.CONFIRMATION_TOOLS, (
+        "the live payment's confirm tool was removed with the abandoned one"
+    )
+    assert "alpha" in flow.HIDDEN_TOOLS.get("sess-suffix", set()), (
+        "the live payment's tool was unhidden"
+    )
+    assert stale["next_tool"] not in flow.CONFIRMATION_TOOLS
+
+
+def test_the_sweep_window_outlasts_every_wait_in_the_flows():
+    """The window has to exceed anything a payment can legitimately take.
+
+    It was set to ten minutes once, which is less than PROGRESS spends waiting
+    for a single payment - so a slow payer lost the purchase they were in the
+    middle of making, and the sweep that took it ran on someone else's call.
+    """
+    from paymcp.payment.flows import dynamic_tools, progress
+
+    assert dynamic_tools.ABANDONED_PAYMENT_TTL_SECONDS > progress.MAX_WAIT_SECONDS
