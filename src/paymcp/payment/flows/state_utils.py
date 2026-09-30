@@ -175,6 +175,13 @@ async def clear_completed_result(
     entry written between the two calls is still deleted. That window is one
     round trip, where clearing by key alone left it open across the caller's
     own awaits, but it is narrowed rather than closed.
+
+    A read that fails leaves the entry, which is the opposite of what
+    `discard_payment_state` does with a payment record, and deliberately so. A
+    payment left behind is spendable by any later call to that tool in the
+    session, whatever its arguments; a result left behind is only served to a
+    call that matches it exactly, and removing one unchecked destroys an answer
+    a concurrent caller has paid for and not yet received.
     """
     if state_store is None or key is None:
         return
@@ -219,7 +226,7 @@ async def discard_spent_state(state_store, key: Any) -> None:
 
 
 async def discard_payment_state(state_store, key: Any, payment_id: Any = None) -> None:
-    """Remove a session's payment record, but only the one this call was using.
+    """Remove a session's payment record, preferring the one this call used.
 
     Session-keyed flows file every call a session makes to a tool under one
     key, and they hold no lock. A concurrent call can replace the record
@@ -230,12 +237,29 @@ async def discard_payment_state(state_store, key: Any, payment_id: Any = None) -
     `payment_id` is what this call worked with. Passing nothing means the call
     never looked at a payment record, and then there is nothing here it can
     claim to be finished with, so nothing is removed.
+
+    When the record cannot be read, the comparison cannot be made and the
+    record is removed anyway. What is being cleaned up here has been spent:
+    leaving it hands the next call in that session a payment that is already
+    paid for, and that call runs the paid tool without one of its own. A
+    concurrent call losing its record to this is the lesser harm, and usually
+    no harm at all - it is holding its own payment id and finishes on it.
     """
     if state_store is None or key is None or payment_id is None:
         return
 
     try:
         entry = await state_store.get(key)
+    except Exception as exc:
+        # Being unable to check is not a reason to leave a spent payment behind.
+        logger.warning(
+            "[PayMCP] Could not read the payment under %s to check it is the one "
+            "this call spent; removing it unchecked: %r", key, exc
+        )
+        await discard_spent_state(state_store, key)
+        return
+
+    try:
         # The bundled stores wrap under "args"; a hand-written one may not.
         payload = entry.get("args") if isinstance(entry, Mapping) else None
         if payload is None and isinstance(entry, Mapping) and "args" not in entry:

@@ -249,3 +249,113 @@ async def test_a_store_that_does_not_wrap_its_payload_is_still_cleaned():
     await discard_payment_state(store, key, "mine")
 
     assert await store.get(key) is None, "the record was not recognised and stayed"
+
+
+class ReadFails(InMemoryStateStore):
+    """Reads are down; deletes still work."""
+
+    async def get(self, key):
+        raise ConnectionError("state store unreachable for reads")
+
+
+class ReadFailsOnce(InMemoryStateStore):
+    """A store that blips on one read and works either side of it.
+
+    Which read is chosen matters: a flow that can no longer read at all fails
+    before it charges anybody, so the harm here needs a store that recovers.
+    """
+
+    def __init__(self, fail_on):
+        super().__init__()
+        self.fail_on = fail_on
+        self.reads = 0
+        self.failed = False
+
+    async def get(self, key):
+        self.reads += 1
+        if self.reads == self.fail_on:
+            self.failed = True
+            raise ConnectionError("state store unreachable for reads")
+        return await super().get(key)
+
+
+@pytest.mark.asyncio
+async def test_a_record_that_cannot_be_read_is_removed_rather_than_left():
+    """A read that fails must not turn into "leave the payment behind".
+
+    The record being cleaned up has been spent, and skipping the delete because
+    the check could not be made leaves it under the session's key for the next
+    call to find.
+    """
+    from paymcp.payment.flows.state_utils import discard_payment_state
+
+    store = ReadFails()
+    key = "expensive_tool:session-1"
+    await store.set(key, {"payment_id": "mine"})
+
+    await discard_payment_state(store, key, "mine")
+
+    # Read through the parent, since this store's own get is the broken one.
+    assert await InMemoryStateStore.get(store, key) is None, (
+        "the spent payment was left behind"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_blip_while_clearing_a_payment_does_not_buy_a_second_call(
+    provider, price_info
+):
+    """What the record left behind is worth, through a flow rather than a helper.
+
+    ELICITATION resumes a payment it finds under the session's key, so a spent
+    one left there is honoured: the next call is not asked to pay, and the paid
+    tool runs on a payment that has already been used.
+    """
+    from paymcp.payment.flows import elicitation
+
+    # The cleanup read, which is the third this flow makes: the cached-result
+    # peek, the payment record, then the check before deleting it.
+    store = ReadFailsOnce(fail_on=3)
+    tool = CountingTool()
+
+    with patch.object(elicitation, "run_elicitation_loop", AsyncMock(return_value="paid")):
+        wrapper = elicitation.make_paid_wrapper(
+            tool, Mock(), {"mock": provider}, price_info, state_store=store
+        )
+        assert await wrapper(ctx=FakeCtx()) == {"report": "result #1"}
+        assert await wrapper(ctx=FakeCtx()) == {"report": "result #2"}
+
+    assert store.failed, (
+        "the cleanup read never failed, so this test no longer covers anything"
+    )
+    assert tool.calls == 2
+    assert provider.create_payment.call_count == 2, (
+        "the second call was served on the first call's spent payment"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_store_that_can_neither_read_nor_delete_does_not_raise():
+    """The fallback is the forgiving delete, not a bare one.
+
+    This runs past the point where the caller has been charged, so a store that
+    cannot do it either must not take the result away with it.
+    """
+    from paymcp.payment.flows.state_utils import discard_payment_state
+
+    class NothingWorks(InMemoryStateStore):
+        async def get(self, key):
+            raise ConnectionError("state store unreachable for reads")
+
+        async def delete(self, key):
+            raise ConnectionError("state store unreachable for writes")
+
+    store = NothingWorks()
+    key = "expensive_tool:session-1"
+    await store.set(key, {"payment_id": "mine"})
+
+    await discard_payment_state(store, key, "mine")
+
+    assert await InMemoryStateStore.get(store, key) is not None, (
+        "nothing could have removed it"
+    )
