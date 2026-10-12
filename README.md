@@ -116,6 +116,7 @@ Built-in support is available for the following providers. You can also [write a
 - ✅ [Walleot](https://walleot.com/developers) — pay‑per‑request
 - ✅ **USDC‑x402 (Base)** — pay‑per‑request ([x402 protocol](https://www.x402.org/))
 - ✅ **USDC‑SPL‑x402 (Solana)** — pay‑per‑request ([x402 protocol](https://www.x402.org/))
+- ✅ **Nano (XNO)** — pay‑per‑request, feeless, paid straight to your own `nano_` address (`NanoProvider`, no key held)
 
 - 🔜 More providers welcome! Open an issue or PR.
 
